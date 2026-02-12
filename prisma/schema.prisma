@@ -1,0 +1,13 @@
+// ===========================================
+// POS SYSTEM - Prisma Schema
+// ===========================================
+// Add your models (tables) below as the project grows.
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
