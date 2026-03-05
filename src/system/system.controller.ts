@@ -12,15 +12,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { HealthResponseDto } from './dto/health-response.dto';
 
 @ApiTags('System')
-@Controller()
+@Controller('v1/api/')
 export class SystemController {
   private readonly logger = new Logger(SystemController.name);
   constructor(private prisma: PrismaService) {}
 
-  @Get('api/health')
+  // Health check endpoint
+  @Get('health')
   @ApiOperation({ summary: 'Check the health of the backend service' })
   @ApiResponse({ status: 200, type: HealthResponseDto })
-  @ApiResponse({ status: 500, description: 'Internal Server Error' })
+  @ApiResponse({ status: 503, description: 'Service Unavailable' })
   async healthCheck() {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
@@ -37,5 +38,18 @@ export class SystemController {
         timestamp: new Date().toISOString(),
       });
     }
+  }
+
+  // get system configurations
+  @Get('config')
+  @ApiOperation({ summary: 'Get system configurations' })
+  @ApiResponse({ status: 200, type: HealthResponseDto })
+  getConfig() {
+    this.logger.log('Fetching system configuration');
+    return {
+      app_version: process.env.APP_VERSION || '1.0.0',
+      powered_by: 'Futura Solutions',
+      maintenance_mode: process.env.MAINTENANCE_MODE === 'true',
+    };
   }
 }
