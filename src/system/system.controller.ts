@@ -12,7 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { HealthResponseDto } from './dto/health-response.dto';
 
 @ApiTags('System')
-@Controller('v1/api/')
+@Controller()
 export class SystemController {
   private readonly logger = new Logger(SystemController.name);
   constructor(private prisma: PrismaService) {}
