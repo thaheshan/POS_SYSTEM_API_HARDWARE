@@ -1,27 +1,13 @@
+// ===========================================
+// POS SYSTEM - Prisma Schema
+// ===========================================
+// Add your models (tables) below as the project grows.
+// Docs: https://pris.ly/d/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-}
-
-model User {
-  user_id               String    @id @default(uuid())
-  tenant_id             String
-  email                 String    @unique
-  password_hash         String
-  first_name            String?
-  last_name             String?
-  role                  String    @default("cashier")
-  is_active             Boolean   @default(true)
-  is_verified           Boolean   @default(false)
-  two_factor_enabled    Boolean   @default(false)
-  last_login            DateTime?
-  failed_login_attempts Int       @default(0)
-  account_locked_until  DateTime?
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @updatedAt
-
-  @@map("users")
 }
