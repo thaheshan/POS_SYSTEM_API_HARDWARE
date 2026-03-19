@@ -11,3 +11,59 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model Category {
+  id                 String     @id @default(uuid()) @db.Uuid
+  tenant_id          String     @db.Uuid
+  name               String
+  parent_category_id String?    @db.Uuid
+  category_level     Int
+  display_order      Int        @default(0)
+  is_active          Boolean    @default(true)
+  created_at         DateTime   @default(now())
+  updated_at         DateTime   @updatedAt
+
+  //self referencing relationship for CategoryHierarchy
+  parent             Category?  @relation("CategoryHierarchy", fields: [parent_category_id], references: [id])
+  children           Category[] @relation("CategoryHierarchy")
+
+  //Indexing
+  @@index([tenant_id, parent_category_id])
+  @@unique([tenant_id, name, parent_category_id]) 
+  
+  @@map("categories")
+}
+
+model Brand {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_id   String   @db.Uuid
+  name        String
+  description String?  @db.Text
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([tenant_id, name])
+  @@map("brands")
+}
+
+model Unit {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenant_id  String   @db.Uuid
+  name       String
+  symbol     String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([tenant_id, name])
+  @@unique([tenant_id, symbol])
+  @@map("units")
+}
+
+// For test the relationship with product and categories
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_id   String   @db.Uuid
+  category_id String   @db.Uuid
+  @@map("products")
+}
