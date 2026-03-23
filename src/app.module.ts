@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { ProductModule } from './product/product.module';
+import { StockModule } from './stock/stock.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ProductModule } from './product/product.module';
     PrismaModule,
     SystemModule,
     ProductModule,
+    StockModule,
   ],
   controllers: [AppController],
   providers: [
