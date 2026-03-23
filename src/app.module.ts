@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { ProductModule } from './product/product.module';
 import { StockModule } from './stock/stock.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { StockModule } from './stock/stock.module';
     SystemModule,
     ProductModule,
     StockModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [

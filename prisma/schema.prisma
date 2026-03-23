@@ -1297,3 +1297,4 @@ model AuditLog {
   @@index([tenantId])
   @@map("audit_logs")
 }
+
