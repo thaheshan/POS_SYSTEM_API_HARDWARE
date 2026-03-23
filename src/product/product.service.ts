@@ -1,14 +1,26 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, TaxCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Inject } from '@nestjs/common';
+import { StockService } from '../stock/stock.service';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+import {
+  BarcodeNotFoundException,
+  DuplicateBarcodeException,
+  DuplicateSkuException,
+  DuplicateValueException,
+  InvalidCategoryException,
+  ProductNotFoundException,
+  SkuNotFoundException,
+  TenantIdRequiredException,
+  VariantsRequiredException,
+} from '../common/exceptions/product.exceptions';
 
 export interface CacheClient {
   get(key: string): Promise<string | null>;
@@ -27,6 +39,7 @@ export class ProductService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly stockService: StockService,
     @Inject('REDIS_CLIENT') private readonly redis: CacheClient,
   ) {}
 
@@ -38,7 +51,7 @@ export class ProductService {
     const tenant = this.ensureTenant(tenantId);
 
     if (createProductDto.has_variants && !createProductDto.variants?.length) {
-      throw new BadRequestException('VARIANTS_REQUIRED');
+      throw new VariantsRequiredException();
     }
 
     const sku =
@@ -51,71 +64,65 @@ export class ProductService {
     );
 
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const product = await tx.product.create({
-          data: {
-            tenantId: tenant,
-            name: createProductDto.name,
-            description: createProductDto.description,
-            sku,
-            barcode: createProductDto.barcode,
-            categoryId: createProductDto.category_id,
-            brandId: createProductDto.brand_id,
-            unitId: createProductDto.unit_id,
-            purchasePrice: createProductDto.purchase_price,
-            sellingPrice: createProductDto.selling_price,
-            minimumSellingPrice: createProductDto.minimum_selling_price,
-            markupPercentage,
-            taxCategory: createProductDto.tax_category as TaxCategory,
-            minimumStockLevel: createProductDto.minimum_stock_level,
-            reorderQuantity: createProductDto.reorder_quantity,
-            hasVariants: createProductDto.has_variants,
-            warrantyMonths: createProductDto.warranty_months,
-          },
-        });
-
-        const variants = createProductDto.variants ?? [];
-        if (createProductDto.has_variants && variants.length) {
-          const variantData = variants.map((variant, index) => ({
-            tenantId: tenant,
-            productId: product.id,
-            variantName: variant.variant_name,
-            sku: variant.sku ?? `${sku}-V${index + 1}`,
-            barcode: variant.barcode,
-            purchasePrice: variant.purchase_price,
-            sellingPrice: variant.selling_price,
-          }));
-
-          await tx.productVariant.createMany({ data: variantData });
-
-          const createdVariants = await tx.productVariant.findMany({
-            where: { tenantId: tenant, productId: product.id },
-            select: { id: true },
-          });
-          await tx.stock.createMany({
-            data: createdVariants.map((variant) => ({
-              tenantId: tenant,
-              productId: product.id,
-              variantId: variant.id,
-              branchId,
-              quantity: new Prisma.Decimal(0),
-              reservedQuantity: new Prisma.Decimal(0),
-            })),
-          });
-        } else {
-          await tx.stock.create({
+      const result = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const product = await tx.product.create({
             data: {
               tenantId: tenant,
-              productId: product.id,
-              branchId,
-              quantity: new Prisma.Decimal(0),
-              reservedQuantity: new Prisma.Decimal(0),
+              name: createProductDto.name,
+              description: createProductDto.description,
+              sku,
+              barcode: createProductDto.barcode,
+              categoryId: createProductDto.category_id,
+              brandId: createProductDto.brand_id,
+              unitId: createProductDto.unit_id,
+              purchasePrice: createProductDto.purchase_price,
+              sellingPrice: createProductDto.selling_price,
+              minimumSellingPrice: createProductDto.minimum_selling_price,
+              markupPercentage,
+              taxCategory: createProductDto.tax_category as TaxCategory,
+              minimumStockLevel: createProductDto.minimum_stock_level,
+              reorderQuantity: createProductDto.reorder_quantity,
+              hasVariants: createProductDto.has_variants,
+              warrantyMonths: createProductDto.warranty_months,
             },
           });
-        }
 
-        return product;
-      });
+          const variants = createProductDto.variants ?? [];
+          if (createProductDto.has_variants && variants.length) {
+            const variantData = variants.map((variant, index) => ({
+              tenantId: tenant,
+              productId: product.id,
+              variantName: variant.variant_name,
+              sku: variant.sku ?? `${sku}-V${index + 1}`,
+              barcode: variant.barcode,
+              purchasePrice: variant.purchase_price,
+              sellingPrice: variant.selling_price,
+            }));
+
+            await tx.productVariant.createMany({ data: variantData });
+
+            const createdVariants = await tx.productVariant.findMany({
+              where: { tenantId: tenant, productId: product.id },
+              select: { id: true },
+            });
+            await this.stockService.createInitialStockForVariants(tx, {
+              tenantId: tenant,
+              productId: product.id,
+              variantIds: createdVariants.map((variant) => variant.id),
+              branchId,
+            });
+          } else {
+            await this.stockService.createInitialStockForProduct(tx, {
+              tenantId: tenant,
+              productId: product.id,
+              branchId,
+            });
+          }
+
+          return product;
+        },
+      );
 
       return result;
     } catch (error) {
@@ -171,12 +178,7 @@ export class ProductService {
         },
       }),
       this.prisma.product.count({ where }),
-      this.prisma.stock.groupBy({
-        by: ['productId'],
-        where: { tenantId: tenant },
-        orderBy: { productId: 'asc' },
-        _sum: { quantity: true, reservedQuantity: true },
-      }),
+      this.stockService.getStockSummaryByProduct(tenant),
     ]);
 
     const stockMap = new Map(
@@ -239,7 +241,7 @@ export class ProductService {
     });
 
     if (!product) {
-      throw new NotFoundException('PRODUCT_NOT_FOUND');
+      throw new ProductNotFoundException();
     }
 
     return product;
@@ -258,7 +260,7 @@ export class ProductService {
     });
 
     if (!existing) {
-      throw new NotFoundException('PRODUCT_NOT_FOUND');
+      throw new ProductNotFoundException();
     }
 
     const sellingPrice =
@@ -310,7 +312,7 @@ export class ProductService {
     });
 
     if (!existing) {
-      throw new NotFoundException('PRODUCT_NOT_FOUND');
+      throw new ProductNotFoundException();
     }
 
     const updated = await this.prisma.product.update({
@@ -336,10 +338,10 @@ export class ProductService {
     });
 
     if (variant) {
-      const stock = await this.prisma.stock.aggregate({
-        where: { tenantId: tenant, variantId: variant.id },
-        _sum: { quantity: true, reservedQuantity: true },
-      });
+      const stock = await this.stockService.getStockSummaryByVariant(
+        tenant,
+        variant.id,
+      );
       const response = {
         product: variant.product,
         variant,
@@ -363,13 +365,13 @@ export class ProductService {
     });
 
     if (!product) {
-      throw new NotFoundException('BARCODE_NOT_FOUND');
+      throw new BarcodeNotFoundException();
     }
 
-    const stock = await this.prisma.stock.aggregate({
-      where: { tenantId: tenant, productId: product.id, variantId: null },
-      _sum: { quantity: true, reservedQuantity: true },
-    });
+    const stock = await this.stockService.getStockSummaryByProductNoVariant(
+      tenant,
+      product.id,
+    );
 
     const response = {
       product,
@@ -408,7 +410,7 @@ export class ProductService {
     });
 
     if (!product) {
-      throw new NotFoundException('SKU_NOT_FOUND');
+      throw new SkuNotFoundException();
     }
 
     return { product, variant: null };
@@ -416,7 +418,7 @@ export class ProductService {
 
   private ensureTenant(tenantId?: string) {
     if (!tenantId) {
-      throw new BadRequestException('TENANT_ID_REQUIRED');
+      throw new TenantIdRequiredException();
     }
     return tenantId;
   }
@@ -428,7 +430,7 @@ export class ProductService {
     });
 
     if (!category) {
-      throw new BadRequestException('INVALID_CATEGORY');
+      throw new InvalidCategoryException();
     }
 
     const year = new Date().getFullYear();
@@ -494,12 +496,12 @@ export class ProductService {
       if (error.code === 'P2002') {
         const target = (error.meta?.target as string[]) ?? [];
         if (target.includes('barcode')) {
-          throw new ConflictException('DUPLICATE_BARCODE');
+          throw new DuplicateBarcodeException();
         }
         if (target.includes('sku')) {
-          throw new ConflictException('DUPLICATE_SKU');
+          throw new DuplicateSkuException();
         }
-        throw new ConflictException('DUPLICATE_VALUE');
+        throw new DuplicateValueException();
       }
     }
   }
