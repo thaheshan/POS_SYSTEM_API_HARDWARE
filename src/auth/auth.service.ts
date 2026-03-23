@@ -1,35 +1,23 @@
 import {
   Injectable,
   UnauthorizedException,
-  ForbiddenException,
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from '../system/dto/login.dto';
-
-interface UserRecord {
-  user_id: string;
-  email: string;
-  password_hash: string;
-  first_name: string | null;
-  last_name: string | null;
-  role: string;
-  is_active: boolean;
-  is_verified: boolean;
-  tenant_id: string;
-  failed_login_attempts: number;
-  account_locked_until: Date | null;
-}
+import { UserService } from '../user/user.service';
+import { InactiveUserException } from './exceptions/inactive-user.exception';
+import { UnverifiedUserException } from './exceptions/unverified-user.exception';
+import { LockedAccountException } from './exceptions/locked-account.exception';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly userService: UserService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -37,67 +25,33 @@ export class AuthService {
     const { email, password } = loginDto;
 
     try {
-      const user = (await this.prisma.db.user.findUnique({
-        where: { email },
-        select: {
-          user_id: true,
-          email: true,
-          password_hash: true,
-          first_name: true,
-          last_name: true,
-          role: true,
-          is_active: true,
-          is_verified: true,
-          tenant_id: true,
-          failed_login_attempts: true,
-          account_locked_until: true,
-        },
-      })) as UserRecord | null;
+      const user = await this.userService.findByEmailWithCredentials(email);
 
       if (!user) {
         throw new UnauthorizedException('Invalid email or password');
       }
 
-      const isPasswordValid = await bcrypt.compare(
-        password,
-        user.password_hash,
-      );
+      const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
       if (!isPasswordValid) {
-        await this.prisma.db.user.update({
-          where: { email },
-          data: { failed_login_attempts: { increment: 1 } },
-        });
+        await this.userService.incrementFailedLoginAttempts(email);
         throw new UnauthorizedException('Invalid email or password');
-      }
-
-      if (!user.is_active) {
-        throw new ForbiddenException(
-          'Account is inactive. Please contact support.',
-        );
-      }
-
-      if (!user.is_verified) {
-        throw new ForbiddenException(
-          'Account is not verified. Please check your email to verify your account.',
-        );
       }
 
       if (user.account_locked_until && new Date() < user.account_locked_until) {
         const unlockTime = user.account_locked_until.toLocaleTimeString();
-        throw new ForbiddenException(
-          `Account is temporarily locked. Please try again after ${unlockTime}.`,
-        );
+        throw new LockedAccountException(unlockTime);
       }
 
-      await this.prisma.db.user.update({
-        where: { email },
-        data: {
-          failed_login_attempts: 0,
-          account_locked_until: null,
-          last_login: new Date(),
-        },
-      });
+      if (!user.is_active) {
+        throw new InactiveUserException();
+      }
+
+      if (!user.is_verified) {
+        throw new UnverifiedUserException();
+      }
+
+      await this.userService.resetLoginState(email);
 
       const payload = {
         sub: user.user_id,
@@ -127,10 +81,13 @@ export class AuthService {
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
-        error instanceof ForbiddenException
+        error instanceof InactiveUserException ||
+        error instanceof UnverifiedUserException ||
+        error instanceof LockedAccountException
       ) {
         throw error;
       }
+
       this.logger.error('Login failed', error);
       throw new InternalServerErrorException('Failed to process login');
     }
