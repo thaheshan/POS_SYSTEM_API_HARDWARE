@@ -71,4 +71,9 @@ export class CategoriesController {
       message: 'Category deleted successfully',
     };
   }
+
+  @Post('seed')
+  async seedCategories(@Headers('tenant_id') tenant_id: string) {
+    return await this.categoriesService.seedDefaultCategories(tenant_id);
+  }
 }

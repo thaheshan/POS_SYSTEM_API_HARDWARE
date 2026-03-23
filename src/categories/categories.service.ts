@@ -184,6 +184,43 @@ export class CategoriesService {
     return parent.category_level + 1;
   }
 
+  async seedDefaultCategories(tenant_id: string) {
+    const defaultCategoryNames = [
+      'PVC Items',
+      'Electrical Items',
+      'Bulbs & Lighting',
+      'Nuts & Bolts & Fasteners',
+      'Tools & Equipment',
+      'Paint & Chemicals',
+      'Hardware & Accessories',
+      'Plumbing Items',
+    ];
+
+    // Map the names into the exact format Prisma expects
+    const categoriesToInsert = defaultCategoryNames.map((name, index) => ({
+      tenant_id,
+      name,
+      parent_category_id: null, // Level 1 primary categories have no parent
+      category_level: 1,
+      display_order: index + 1, // Orders them 1 through 8
+      is_active: true,
+    }));
+
+    // Use createMany for a fast, single bulk-insert
+    const result = await this.prisma.category.createMany({
+      data: categoriesToInsert,
+      skipDuplicates: true, // Prevents crashing if ran twice by accident
+    });
+
+    // Invalidate the cache so the new shop sees these immediately
+    await this.clearTenantCache(tenant_id);
+
+    return {
+      success: true,
+      message: `Successfully seeded ${result.count} default categories.`,
+    };
+  }
+
   getDescendantCategoryIds(rootId: string, tree: CategoryNode[]): string[] {
     const ids: string[] = [];
 

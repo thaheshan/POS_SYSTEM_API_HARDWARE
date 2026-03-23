@@ -68,11 +68,15 @@ model Unit {
   @@map("units")
 }
 
+// This model defines the structure for the "Product" entity, including its unique identifier,
+// tenant association, and relationship to a "Category". The "category_id" field establishes
+// a foreign key relationship with the "Category" model. The table is mapped to "products" in the database.
+// Currently, this model is commented out and not active in the schema.
 // For test the relationship with product and categories
-model Product {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_id   String   @db.Uuid
-  category_id String   @db.Uuid
-  category    Category @relation(fields: [category_id], references: [id])
-  @@map("products")
-}
+//model Product {
+//  id          String   @id @default(uuid()) @db.Uuid
+//  tenant_id   String   @db.Uuid
+//  category_id String   @db.Uuid
+//  category    Category @relation(fields: [category_id], references: [id])
+//  @@map("products")
+//}
