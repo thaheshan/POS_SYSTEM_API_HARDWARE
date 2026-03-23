@@ -26,7 +26,9 @@ async function bootstrap() {
     app.useGlobalInterceptors(new DetailedLoggingInterceptor());
   }
   // * Apply filters
-  app.useGlobalFilters(new LoggingExceptionFilter(app.get(HttpAdapterHost)));
+  const httpAdapterHost = app.get(HttpAdapterHost);
+
+  app.useGlobalFilters(new LoggingExceptionFilter(httpAdapterHost));
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();

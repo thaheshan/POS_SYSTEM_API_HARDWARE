@@ -5,11 +5,13 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { CategoriesModule } from './categories/categories.module';
+import redisConfig from './config/redis.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      load: [redisConfig],
     }),
     PrismaModule,
     SystemModule,
