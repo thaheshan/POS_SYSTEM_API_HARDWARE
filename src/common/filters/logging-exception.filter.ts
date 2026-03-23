@@ -1,9 +1,13 @@
 import { Catch, ArgumentsHost, Logger } from '@nestjs/common';
-import { BaseExceptionFilter } from '@nestjs/core';
+import { BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
 
 @Catch() // no args = catch every exception
 export class LoggingExceptionFilter extends BaseExceptionFilter {
   private readonly logger = new Logger(LoggingExceptionFilter.name);
+
+  constructor(private readonly adapterHost: HttpAdapterHost) {
+    super(adapterHost.httpAdapter);
+  }
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
