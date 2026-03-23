@@ -17,13 +17,16 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
-    const pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    });
-    const adapter = new PrismaPg(pool);
-    super({ adapter });
-  }
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    keepAlive: true,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  });
+  const adapter = new PrismaPg(pool);
+  super({ adapter });
+}
 
   async onModuleInit() {
     await this.$connect();
