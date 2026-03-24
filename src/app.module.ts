@@ -8,6 +8,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { BrandsModule } from './brands/brands.module';
 import { UnitsModule } from './units/units.module';
 import redisConfig from './config/redis.config';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import redisConfig from './config/redis.config';
     CategoriesModule,
     BrandsModule,
     UnitsModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

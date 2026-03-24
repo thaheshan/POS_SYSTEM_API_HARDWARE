@@ -1,7 +1,6 @@
 import 'dotenv/config';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, HttpAdapterHost } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { HttpAdapterHost } from '@nestjs/core';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { DetailedLoggingInterceptor } from './common/interceptors/detailed-logging.interceptor';
@@ -21,7 +20,7 @@ async function bootstrap() {
     new ResponseInterceptor(),
     new LoggingInterceptor(),
   );
-  // ! Only for development as sensitive data may be exposed
+
   if (process.env.NODE_ENV !== 'production') {
     app.useGlobalInterceptors(new DetailedLoggingInterceptor());
   }
@@ -31,4 +30,5 @@ async function bootstrap() {
   app.useGlobalFilters(new LoggingExceptionFilter(httpAdapterHost));
   await app.listen(process.env.PORT ?? 3000);
 }
+
 bootstrap();
