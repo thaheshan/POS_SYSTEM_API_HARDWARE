@@ -4,6 +4,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { CategoryNode } from 'src/common/interfaces/category.interface';
+import { Logger } from '@nestjs/common';
 import {
   CategoryNotFoundException,
   CategorySelfParentException,
@@ -13,6 +14,7 @@ import {
 
 @Injectable()
 export class CategoriesService {
+  private readonly logger = new Logger(CategoriesService.name);
   constructor(
     private prisma: PrismaService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
@@ -24,6 +26,7 @@ export class CategoriesService {
     createCategoryDto: CreateCategoryDto,
   ) {
     const { name, parent_category_id, display_order } = createCategoryDto;
+    this.logger.log(`Creating category '${name}' for tenant ${tenant_id}`);
     const category_level = await this.calculateCategoryLevel(
       tenant_id,
       parent_category_id,
@@ -37,6 +40,7 @@ export class CategoriesService {
         display_order: display_order || 0,
       },
     });
+    this.logger.log(`Category '${name}' created with id ${category.id}`);
     await this.clearTenantCache(tenant_id);
     return category;
   }
@@ -47,9 +51,12 @@ export class CategoriesService {
 
     const cachedTree = await this.cacheManager.get<CategoryNode[]>(cache_key);
     if (cachedTree) {
+      this.logger.log(`Category tree cache hit for tenant ${tenant_id}`);
       return cachedTree;
     }
-
+    this.logger.log(
+      `Category tree cache miss for tenant ${tenant_id}, fetching from DB`,
+    );
     const flatCategories = await this.prisma.category.findMany({
       where: { tenant_id, is_active: true },
       orderBy: { display_order: 'asc' },
@@ -86,7 +93,8 @@ export class CategoriesService {
       }
     });
 
-    await this.cacheManager.set(cache_key, rootNodes, 600); // Cache for 10 minutes
+    await this.cacheManager.set(cache_key, rootNodes, 600 * 1000);
+    this.logger.log(`Category tree cached for tenant ${tenant_id}`);
     return rootNodes;
   }
 
@@ -97,10 +105,12 @@ export class CategoriesService {
     updateCategoryDto: UpdateCategoryDto,
   ) {
     const { name, parent_category_id, display_order } = updateCategoryDto;
+    this.logger.log(`Updating category ${id} for tenant ${tenant_id}`);
     const existingCategory = await this.prisma.category.findFirst({
       where: { id, tenant_id },
     });
     if (!existingCategory) {
+      this.logger.warn(`Category ${id} not found for tenant ${tenant_id}`);
       throw new CategoryNotFoundException();
     }
     const updateData: Record<string, unknown> = {};
@@ -110,6 +120,9 @@ export class CategoriesService {
     // If they are moving the category to a new parent
     if (parent_category_id !== undefined) {
       if (parent_category_id === id) {
+        this.logger.warn(
+          `Attempted to set category ${id} as its own parent for tenant ${tenant_id}`,
+        );
         throw new CategorySelfParentException();
       }
 
@@ -126,6 +139,7 @@ export class CategoriesService {
       data: updateData,
     });
 
+    this.logger.log(`Category ${id} updated for tenant ${tenant_id}`);
     await this.clearTenantCache(tenant_id);
 
     return updatedCategory;
@@ -133,11 +147,13 @@ export class CategoriesService {
 
   // Delete Category method checks if the category to be deleted has any child categories. If it does, it throws a ConflictException to prevent deletion. If there are no child categories, it proceeds to delete the category from the database and then clears the relevant cache for the tenant to ensure that subsequent requests will not return stale data.
   async deleteCategory(tenant_id: string, id: string): Promise<void> {
+    this.logger.log(`Deleting category ${id} for tenant ${tenant_id}`);
     const category = await this.prisma.category.findFirst({
       where: { id, tenant_id },
     });
 
     if (!category) {
+      this.logger.warn(`Category ${id} not found for tenant ${tenant_id}`);
       throw new CategoryNotFoundException('Category not found');
     }
 
@@ -146,6 +162,9 @@ export class CategoriesService {
     });
 
     if (childCount > 0) {
+      this.logger.warn(
+        `Cannot delete category ${id} for tenant ${tenant_id}: has child categories`,
+      );
       throw new CategoryDeleteConflictException(
         'Cannot delete category with child categories',
       );
@@ -155,6 +174,7 @@ export class CategoriesService {
       where: { id, tenant_id },
     });
 
+    this.logger.log(`Category ${id} deleted for tenant ${tenant_id}`);
     await this.clearTenantCache(tenant_id);
   }
 
@@ -171,6 +191,9 @@ export class CategoriesService {
     });
 
     if (!parent) {
+      this.logger.warn(
+        `Parent category ${parent_category_id} not found for tenant ${tenant_id}`,
+      );
       throw new CategoryNotFoundException('Parent category not found');
     }
 
@@ -179,12 +202,14 @@ export class CategoriesService {
     });
     const maxDepth = tenantSetting?.max_category_depth ?? 3;
     if (parent.category_level >= maxDepth) {
+      this.logger.warn(`Category depth limit exceeded for tenant ${tenant_id}`);
       throw new CategoryDepthLimitExceededException();
     }
     return parent.category_level + 1;
   }
 
   async seedDefaultCategories(tenant_id: string) {
+    this.logger.log(`Seeding default categories for tenant ${tenant_id}`);
     const defaultCategoryNames = [
       'PVC Items',
       'Electrical Items',
@@ -215,6 +240,9 @@ export class CategoriesService {
     // Invalidate the cache so the new shop sees these immediately
     await this.clearTenantCache(tenant_id);
 
+    this.logger.log(
+      `Seeded ${result.count} default categories for tenant ${tenant_id}`,
+    );
     return {
       success: true,
       message: `Successfully seeded ${result.count} default categories.`,
@@ -248,5 +276,6 @@ export class CategoriesService {
   private async clearTenantCache(tenant_id: string) {
     const cacheKey = `cat_tree:${tenant_id}`;
     await this.cacheManager.del(cacheKey);
+    this.logger.log(`Cleared category tree cache for tenant ${tenant_id}`);
   }
 }
