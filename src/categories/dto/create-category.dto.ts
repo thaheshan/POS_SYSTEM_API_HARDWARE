@@ -1,23 +1,42 @@
 import {
-  IsInt,
-  IsNotEmpty,
-  IsOptional,
   IsString,
+  IsOptional,
+  IsInt,
+  IsBoolean,
   IsUUID,
-  Min,
+  IsNotEmpty,
 } from 'class-validator';
 
 export class CreateCategoryDto {
   @IsString()
-  @IsNotEmpty({ message: 'Category name is required' })
-  name: string;
+  @IsNotEmpty()
+  categoryName: string;
 
-  @IsOptional()
-  @IsUUID('all', { message: 'Parent Category ID must be a valid UUID' })
-  parent_category_id?: string;
+  @IsString()
+  @IsNotEmpty()
+  categoryCode: string;
 
+  @IsString()
   @IsOptional()
+  description?: string;
+
+  @IsUUID()
+  @IsOptional()
+  parentCategoryId?: string;
+
   @IsInt()
-  @Min(0)
-  display_order?: number;
+  @IsOptional()
+  categoryLevel?: number;
+
+  @IsInt()
+  @IsOptional()
+  displayOrder?: number;
+
+  @IsString()
+  @IsOptional()
+  iconUrl?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 }

@@ -1,11 +1,19 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsNotEmpty } from 'class-validator';
 
 export class CreateUnitDto {
   @IsString()
   @IsNotEmpty()
-  name: string;
+  unitName: string;
 
   @IsString()
   @IsNotEmpty()
-  symbol: string;
+  unitCode: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 }

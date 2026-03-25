@@ -2,8 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
-import { CategoryNode } from 'src/common/interfaces/category.interface';
 import { Logger } from '@nestjs/common';
 import {
   CategoryNotFoundException,
@@ -11,13 +9,15 @@ import {
   CategoryDepthLimitExceededException,
   CategoryDeleteConflictException,
 } from 'src/common/exceptions/category.exceptions';
+import { CategoryNode } from 'src/categories/interfaces/category.interface';
+import type { CacheClient } from 'src/cache/cache-client.interface';
 
 @Injectable()
 export class CategoriesService {
   private readonly logger = new Logger(CategoriesService.name);
   constructor(
     private prisma: PrismaService,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    @Inject('REDIS_CLIENT') private redis: CacheClient,
   ) {}
 
   // This method creates a new category for a given tenant. It takes the tenant ID and the category details from the CreateCategoryDto, calculates the category level based on its parent category (if provided), and then inserts the new category into the database. The method returns the created category object.
@@ -25,49 +25,67 @@ export class CategoriesService {
     tenant_id: string,
     createCategoryDto: CreateCategoryDto,
   ) {
-    const { name, parent_category_id, display_order } = createCategoryDto;
-    this.logger.log(`Creating category '${name}' for tenant ${tenant_id}`);
-    const category_level = await this.calculateCategoryLevel(
-      tenant_id,
-      parent_category_id,
+    const { categoryName, parentCategoryId } = createCategoryDto;
+
+    this.logger.log(
+      `Creating category '${categoryName}' for tenant ${tenant_id}`,
     );
+
+    const categoryLevel = await this.calculateCategoryLevel(
+      tenant_id,
+      parentCategoryId,
+    );
+
     const category = await this.prisma.category.create({
       data: {
-        tenant_id,
-        name,
-        parent_category_id: parent_category_id || null,
-        category_level,
-        display_order: display_order || 0,
+        tenantId: tenant_id,
+        categoryLevel: categoryLevel,
+        ...createCategoryDto,
       },
     });
-    this.logger.log(`Category '${name}' created with id ${category.id}`);
+
+    this.logger.log(
+      `Category '${categoryName}' created with id ${category.id}`,
+    );
+
     await this.clearTenantCache(tenant_id);
+
     return category;
   }
 
   // This method retrieves the category tree for a given tenant. It first checks if the tree is available in the cache and returns it if found. If not, it fetches all active categories for the tenant from the database, constructs a hierarchical tree structure from the flat list of categories, stores the result in the cache for future requests, and then returns the tree.
-  async getCategoryTree(tenant_id: string): Promise<CategoryNode[]> {
-    const cache_key = `cat_tree:${tenant_id}`;
+  async getCategoryTree(tenantId: string): Promise<CategoryNode[]> {
+    const cacheKey = `cat_tree:${tenantId}`;
 
-    const cachedTree = await this.cacheManager.get<CategoryNode[]>(cache_key);
-    if (cachedTree) {
-      this.logger.log(`Category tree cache hit for tenant ${tenant_id}`);
-      return cachedTree;
+    const cachedString = await this.redis.get(cacheKey);
+    if (cachedString) {
+      this.logger.log(`Category tree cache hit for tenant ${tenantId}`);
+      return JSON.parse(cachedString) as CategoryNode[];
     }
+
     this.logger.log(
-      `Category tree cache miss for tenant ${tenant_id}, fetching from DB`,
+      `Category tree cache miss for tenant ${tenantId}, fetching from DB`,
     );
-    const flatCategories = await this.prisma.category.findMany({
-      where: { tenant_id, is_active: true },
-      orderBy: { display_order: 'asc' },
+
+    type FlatCategory = {
+      id: string;
+      categoryName: string;
+      categoryCode: string;
+      iconUrl: string | null;
+      displayOrder: number;
+      parentCategoryId?: string | null;
+      _count?: { products?: number };
+    };
+
+    const flatCategories = (await this.prisma.category.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: { displayOrder: 'asc' },
       include: {
         _count: {
-          select: {
-            products: true,
-          },
+          select: { products: true },
         },
       },
-    });
+    })) as FlatCategory[];
 
     const categoryMap = new Map<string, CategoryNode>();
     const rootNodes: CategoryNode[] = [];
@@ -75,16 +93,22 @@ export class CategoriesService {
     flatCategories.forEach((cat) => {
       categoryMap.set(cat.id, {
         id: cat.id,
-        name: cat.name,
-        product_count: cat._count.products,
+        categoryName:
+          typeof cat.categoryName === 'string' ? cat.categoryName : '',
+        categoryCode:
+          typeof cat.categoryCode === 'string' ? cat.categoryCode : '',
+        iconUrl: typeof cat.iconUrl === 'string' ? cat.iconUrl : null,
+        displayOrder:
+          typeof cat.displayOrder === 'number' ? cat.displayOrder : 0,
+        productCount: cat._count?.products ?? 0,
         children: [],
-      });
+      } as CategoryNode);
     });
 
     flatCategories.forEach((cat) => {
       const mappedCat = categoryMap.get(cat.id)!;
-      if (cat.parent_category_id) {
-        const parent = categoryMap.get(cat.parent_category_id);
+      if (cat.parentCategoryId) {
+        const parent = categoryMap.get(cat.parentCategoryId);
         if (parent) {
           parent.children.push(mappedCat);
         }
@@ -93,8 +117,10 @@ export class CategoriesService {
       }
     });
 
-    await this.cacheManager.set(cache_key, rootNodes, 600 * 1000);
-    this.logger.log(`Category tree cached for tenant ${tenant_id}`);
+    // 5. Save to Cache (10 minutes = 600,000 ms in cache-manager v5)
+    await this.redis.set(cacheKey, JSON.stringify(rootNodes), 'EX', 600);
+    this.logger.log(`Category tree cached for tenant ${tenantId}`);
+
     return rootNodes;
   }
 
@@ -104,22 +130,22 @@ export class CategoriesService {
     id: string,
     updateCategoryDto: UpdateCategoryDto,
   ) {
-    const { name, parent_category_id, display_order } = updateCategoryDto;
+    const { categoryName, parentCategoryId, displayOrder } = updateCategoryDto;
     this.logger.log(`Updating category ${id} for tenant ${tenant_id}`);
     const existingCategory = await this.prisma.category.findFirst({
-      where: { id, tenant_id },
+      where: { id, tenantId: tenant_id },
     });
     if (!existingCategory) {
       this.logger.warn(`Category ${id} not found for tenant ${tenant_id}`);
       throw new CategoryNotFoundException();
     }
     const updateData: Record<string, unknown> = {};
-    if (name) updateData.name = name;
-    if (display_order !== undefined) updateData.display_order = display_order;
+    if (categoryName) updateData.categoryName = categoryName;
+    if (displayOrder !== undefined) updateData.displayOrder = displayOrder;
 
     // If they are moving the category to a new parent
-    if (parent_category_id !== undefined) {
-      if (parent_category_id === id) {
+    if (parentCategoryId !== undefined) {
+      if (parentCategoryId === id) {
         this.logger.warn(
           `Attempted to set category ${id} as its own parent for tenant ${tenant_id}`,
         );
@@ -128,14 +154,14 @@ export class CategoriesService {
 
       const newLevel = await this.calculateCategoryLevel(
         tenant_id,
-        parent_category_id,
+        parentCategoryId,
       );
-      updateData.parent_category_id = parent_category_id;
-      updateData.category_level = newLevel;
+      updateData.parentCategoryId = parentCategoryId;
+      updateData.categoryLevel = newLevel;
     }
 
     const updatedCategory = await this.prisma.category.update({
-      where: { id, tenant_id },
+      where: { id, tenantId: tenant_id },
       data: updateData,
     });
 
@@ -149,7 +175,7 @@ export class CategoriesService {
   async deleteCategory(tenant_id: string, id: string): Promise<void> {
     this.logger.log(`Deleting category ${id} for tenant ${tenant_id}`);
     const category = await this.prisma.category.findFirst({
-      where: { id, tenant_id },
+      where: { id, tenantId: tenant_id },
     });
 
     if (!category) {
@@ -158,7 +184,7 @@ export class CategoriesService {
     }
 
     const childCount = await this.prisma.category.count({
-      where: { parent_category_id: id, tenant_id },
+      where: { parentCategoryId: id, tenantId: tenant_id },
     });
 
     if (childCount > 0) {
@@ -171,7 +197,7 @@ export class CategoriesService {
     }
 
     await this.prisma.category.deleteMany({
-      where: { id, tenant_id },
+      where: { id, tenantId: tenant_id },
     });
 
     this.logger.log(`Category ${id} deleted for tenant ${tenant_id}`);
@@ -180,36 +206,44 @@ export class CategoriesService {
 
   // This private method calculates the category level based on its parent category. If there is no parent category, it returns 1 (indicating a top-level category). If there is a parent category, it retrieves the parent's level and checks against the maximum allowed depth defined in the tenant settings. If the new level exceeds the maximum depth, it throws an exception. Otherwise, it returns the calculated level for the new category.
   private async calculateCategoryLevel(
-    tenant_id: string,
-    parent_category_id?: string,
+    tenantId: string,
+    parentCategoryId?: string,
   ): Promise<number> {
-    if (!parent_category_id) {
+    if (!parentCategoryId) {
       return 1;
     }
-    const parent = await this.prisma.category.findUnique({
-      where: { id: parent_category_id, tenant_id },
+    const parent = await this.prisma.category.findFirst({
+      where: {
+        id: parentCategoryId,
+        tenantId: tenantId,
+      },
     });
 
     if (!parent) {
       this.logger.warn(
-        `Parent category ${parent_category_id} not found for tenant ${tenant_id}`,
+        `Parent category ${parentCategoryId} not found for tenant ${tenantId}`,
       );
       throw new CategoryNotFoundException('Parent category not found');
     }
-
-    const tenantSetting = await this.prisma.tenantSetting.findUnique({
-      where: { tenant_id },
+    const tenantSetting = await this.prisma.tenantSetting.findFirst({
+      where: { tenantId: tenantId },
     });
-    const maxDepth = tenantSetting?.max_category_depth ?? 3;
-    if (parent.category_level >= maxDepth) {
-      this.logger.warn(`Category depth limit exceeded for tenant ${tenant_id}`);
+    const maxDepth = tenantSetting?.maxCategoryDepth ?? 3;
+
+    if (parent.categoryLevel == null) {
+      this.logger.warn(`Parent category level is null for tenant ${tenantId}`);
+      throw new Error('Parent category level is null');
+    }
+
+    if (parent.categoryLevel >= maxDepth) {
+      this.logger.warn(`Category depth limit exceeded for tenant ${tenantId}`);
       throw new CategoryDepthLimitExceededException();
     }
-    return parent.category_level + 1;
+    return parent.categoryLevel + 1;
   }
 
-  async seedDefaultCategories(tenant_id: string) {
-    this.logger.log(`Seeding default categories for tenant ${tenant_id}`);
+  async seedDefaultCategories(tenantId: string) {
+    this.logger.log(`Seeding default categories for tenant ${tenantId}`);
     const defaultCategoryNames = [
       'PVC Items',
       'Electrical Items',
@@ -223,12 +257,13 @@ export class CategoriesService {
 
     // Map the names into the exact format Prisma expects
     const categoriesToInsert = defaultCategoryNames.map((name, index) => ({
-      tenant_id,
-      name,
-      parent_category_id: null, // Level 1 primary categories have no parent
-      category_level: 1,
-      display_order: index + 1, // Orders them 1 through 8
-      is_active: true,
+      tenantId: tenantId,
+      categoryName: name,
+      categoryCode: `CAT${index + 1}`,
+      parentCategoryId: null,
+      categoryLevel: 1,
+      displayOrder: index + 1,
+      isActive: true,
     }));
 
     // Use createMany for a fast, single bulk-insert
@@ -238,10 +273,10 @@ export class CategoriesService {
     });
 
     // Invalidate the cache so the new shop sees these immediately
-    await this.clearTenantCache(tenant_id);
+    await this.clearTenantCache(tenantId);
 
     this.logger.log(
-      `Seeded ${result.count} default categories for tenant ${tenant_id}`,
+      `Seeded ${result.count} default categories for tenant ${tenantId}`,
     );
     return {
       success: true,
@@ -249,16 +284,31 @@ export class CategoriesService {
     };
   }
 
-  getDescendantCategoryIds(rootId: string, tree: CategoryNode[]): string[] {
+  getDescendantCategoryIds(
+    targetId: string,
+    treeNodes: CategoryNode[],
+  ): string[] {
     const ids: string[] = [];
+    let targetNode: CategoryNode | null = null;
 
-    const traverse = (node: CategoryNode) => {
-      ids.push(node.id);
-      node.children.forEach(traverse);
+    const findNode = (nodes: CategoryNode[]) => {
+      for (const node of nodes) {
+        if (node.id === targetId) {
+          targetNode = node;
+          return;
+        }
+        if (node.children.length > 0) findNode(node.children);
+      }
     };
+    findNode(treeNodes);
 
-    const rootNode = tree.find((cat) => cat.id === rootId);
-    if (rootNode) traverse(rootNode);
+    if (targetNode) {
+      const traverse = (node: CategoryNode) => {
+        ids.push(node.id);
+        node.children.forEach(traverse);
+      };
+      traverse(targetNode);
+    }
 
     return ids;
   }
@@ -266,16 +316,16 @@ export class CategoriesService {
   // This method retrieves the IDs of all descendant categories for a given category ID and tenant. It first fetches the entire category tree for the tenant, then uses a helper method to traverse the tree and collect the IDs of all descendant categories (including the specified category itself). This is useful for filtering products by category and its subcategories.
   async getDescendantCategoryIdsForFilter(
     categoryId: string,
-    tenant_id: string,
+    tenantId: string,
   ): Promise<string[]> {
-    const tree = await this.getCategoryTree(tenant_id);
+    const tree = await this.getCategoryTree(tenantId);
     return this.getDescendantCategoryIds(categoryId, tree);
   }
 
   // This private method is responsible for clearing the cached category tree for a specific tenant. It constructs the cache key using the tenant ID and then deletes the corresponding entry from the cache. This is typically called after updating a category to ensure that subsequent requests will fetch the updated category tree from the database rather than returning stale data from the cache.
-  private async clearTenantCache(tenant_id: string) {
-    const cacheKey = `cat_tree:${tenant_id}`;
-    await this.cacheManager.del(cacheKey);
-    this.logger.log(`Cleared category tree cache for tenant ${tenant_id}`);
+  private async clearTenantCache(tenantId: string) {
+    const cacheKey = `cat_tree:${tenantId}`;
+    await this.redis.del(cacheKey);
+    this.logger.log(`Cleared category tree cache for tenant ${tenantId}`);
   }
 }

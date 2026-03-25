@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { CategoriesController } from './categories.controller';
 import { CategoriesService } from './categories.service';
-import { AppCacheModule } from 'src/cache/cache.module';
+import { RedisModule } from 'src/cache/redis.module';
 
 @Module({
-  imports: [AppCacheModule],
+  imports: [RedisModule],
   controllers: [CategoriesController],
   providers: [CategoriesService],
 })

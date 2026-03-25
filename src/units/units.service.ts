@@ -15,23 +15,23 @@ export class UnitsService {
 
   async create(tenant_id: string, createUnitDto: CreateUnitDto) {
     this.logger.log(
-      `Creating unit '${createUnitDto.name}' for tenant ${tenant_id}`,
+      `Creating unit '${createUnitDto.unitName}' for tenant ${tenant_id}`,
     );
     try {
       const unit = await this.prisma.unit.create({
         data: {
-          tenant_id,
+          tenantId: tenant_id,
           ...createUnitDto,
         },
       });
       this.logger.log(
-        `Unit '${createUnitDto.name}' created with id ${unit.id}`,
+        `Unit '${createUnitDto.unitName}' created with id ${unit.id}`,
       );
       return unit;
     } catch (error) {
       if (error.code === 'P2002') {
         this.logger.warn(
-          `Unit already exists: ${createUnitDto.name} for tenant ${tenant_id}`,
+          `Unit already exists: ${createUnitDto.unitName} for tenant ${tenant_id}`,
         );
         throw new ConflictException(
           'A unit with this name or symbol already exists.',
@@ -45,8 +45,8 @@ export class UnitsService {
   async findAll(tenant_id: string) {
     this.logger.log(`Fetching all units for tenant ${tenant_id}`);
     return this.prisma.unit.findMany({
-      where: { tenant_id },
-      orderBy: { created_at: 'desc' },
+      where: { tenantId: tenant_id },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -56,7 +56,7 @@ export class UnitsService {
       where: { id },
     });
 
-    if (!unit || unit.tenant_id !== tenant_id) {
+    if (!unit || unit.tenantId !== tenant_id) {
       this.logger.warn(`Unit ${id} not found for tenant ${tenant_id}`);
       throw new NotFoundException('Unit not found');
     }
@@ -71,7 +71,7 @@ export class UnitsService {
     } catch (error) {
       if (error.code === 'P2002') {
         this.logger.warn(
-          `Unit already exists: ${updateUnitDto.name} for tenant ${tenant_id}`,
+          `Unit already exists: ${updateUnitDto.unitName} for tenant ${tenant_id}`,
         );
         throw new ConflictException(
           'A unit with this name or symbol already exists.',
@@ -88,7 +88,7 @@ export class UnitsService {
       where: { id },
     });
 
-    if (!unit || unit.tenant_id !== tenant_id) {
+    if (!unit || unit.tenantId !== tenant_id) {
       this.logger.warn(`Unit ${id} not found for tenant ${tenant_id}`);
       throw new NotFoundException('Unit not found');
     }

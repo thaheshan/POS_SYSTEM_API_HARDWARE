@@ -14,23 +14,23 @@ export class BrandsService {
 
   async create(tenant_id: string, createBrandDto: CreateBrandDto) {
     this.logger.log(
-      `Creating brand '${createBrandDto.name}' for tenant ${tenant_id}`,
+      `Creating brand '${createBrandDto.brandName}' for tenant ${tenant_id}`,
     );
     try {
       const brand = await this.prisma.brand.create({
         data: {
-          tenant_id,
+          tenantId: tenant_id,
           ...createBrandDto,
         },
       });
       this.logger.log(
-        `Brand '${createBrandDto.name}' created with id ${brand.id}`,
+        `Brand '${createBrandDto.brandName}' created with id ${brand.id}`,
       );
       return brand;
     } catch (error) {
       if (error.code === 'P2002') {
         this.logger.warn(
-          `Brand already exists: ${createBrandDto.name} for tenant ${tenant_id}`,
+          `Brand already exists: ${createBrandDto.brandName} for tenant ${tenant_id}`,
         );
         throw new BrandAlreadyExistsException(
           'A brand with this name already exists.',
@@ -44,15 +44,15 @@ export class BrandsService {
   async findAll(tenant_id: string) {
     this.logger.log(`Fetching all brands for tenant ${tenant_id}`);
     return this.prisma.brand.findMany({
-      where: { tenant_id },
-      orderBy: { created_at: 'desc' },
+      where: { tenantId: tenant_id },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
   async update(tenant_id: string, id: string, updateBrandDto: UpdateBrandDto) {
     this.logger.log(`Updating brand ${id} for tenant ${tenant_id}`);
     const brand = await this.prisma.brand.findFirst({
-      where: { id, tenant_id },
+      where: { id, tenantId: tenant_id },
     });
 
     if (!brand) {
@@ -62,7 +62,7 @@ export class BrandsService {
 
     try {
       const updated = await this.prisma.brand.update({
-        where: { id, tenant_id },
+        where: { id, tenantId: tenant_id },
         data: updateBrandDto,
       });
       this.logger.log(`Brand ${id} updated for tenant ${tenant_id}`);
@@ -70,7 +70,7 @@ export class BrandsService {
     } catch (error) {
       if (error.code === 'P2002') {
         this.logger.warn(
-          `Brand already exists: ${updateBrandDto.name} for tenant ${tenant_id}`,
+          `Brand already exists: ${updateBrandDto.brandName} for tenant ${tenant_id}`,
         );
         throw new BrandAlreadyExistsException(
           'A brand with this name already exists.',
@@ -84,7 +84,7 @@ export class BrandsService {
   async remove(tenant_id: string, id: string) {
     this.logger.log(`Deleting brand ${id} for tenant ${tenant_id}`);
     const brand = await this.prisma.brand.findFirst({
-      where: { id, tenant_id },
+      where: { id, tenantId: tenant_id },
     });
 
     if (!brand) {
@@ -93,7 +93,7 @@ export class BrandsService {
     }
 
     const deleted = await this.prisma.brand.delete({
-      where: { id, tenant_id },
+      where: { id, tenantId: tenant_id },
     });
     this.logger.log(`Brand ${id} deleted for tenant ${tenant_id}`);
     return deleted;

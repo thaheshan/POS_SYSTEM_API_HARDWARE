@@ -7,76 +7,77 @@ datasource db {
 }
 
 model TenantSetting {
-  tenant_id          String   @id @db.Uuid 
-  max_category_depth Int      @default(3)  
-  updated_at         DateTime @updatedAt
+  tenantId         String   @id @map("tenant_id") @db.Uuid
+  maxCategoryDepth Int      @default(3) @map("max_category_depth")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@map("tenant_settings")
 }
 
 model Category {
-  id                 String     @id @default(uuid()) @db.Uuid
-  tenant_id          String     @db.Uuid
-  name               String
-  parent_category_id String?    @db.Uuid
-  category_level     Int
-  display_order      Int        @default(0)
-  is_active          Boolean    @default(true)
-  created_at         DateTime   @default(now())
-  updated_at         DateTime   @updatedAt
+  id               String     @id @default(uuid()) @map("category_id") @db.Uuid
+  tenantId         String     @map("tenant_id") @db.Uuid
+  categoryName     String     @map("category_name")
+  categoryCode     String     @map("category_code")
+  description      String?
+  parentCategoryId String?    @map("parent_category_id") @db.Uuid
+  categoryLevel    Int?       @map("category_level")
+  displayOrder     Int?       @map("display_order")
+  iconUrl          String?    @map("icon_url")
+  isActive         Boolean    @default(true) @map("is_active")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
 
-  //self referencing relationship for CategoryHierarchy
-  parent             Category?  @relation("CategoryHierarchy", fields: [parent_category_id], references: [id])
-  children           Category[] @relation("CategoryHierarchy")
-  products           Product[] //relation should be define on the Product schema
-  //Indexing
-  @@index([tenant_id, parent_category_id])
-  @@unique([tenant_id, name, parent_category_id]) 
-  
+  shop             Shop       @relation(fields: [tenantId], references: [id])
+  parentCategory   Category?  @relation("CategoryToCategory", fields: [parentCategoryId], references: [id])
+  subCategories    Category[] @relation("CategoryToCategory")
+  products         Product[]
+
+  @@unique([tenantId, categoryCode])
+  @@index([tenantId])
   @@map("categories")
 }
 
 model Brand {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_id   String   @db.Uuid
-  name        String
-  description String?  @db.Text
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id          String   @id @default(uuid()) @map("brand_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  brandName   String   @map("brand_name")
+  description String?
+  logoUrl     String?  @map("logo_url")
+  website     String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  @@unique([tenant_id, name])
+  shop        Shop     @relation(fields: [tenantId], references: [id])
+  products    Product[]
+
+  @@index([tenantId])
   @@map("brands")
 }
 
 model Unit {
-  id         String   @id @default(uuid()) @db.Uuid
-  tenant_id  String   @db.Uuid
-  name       String
-  symbol     String
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id          String   @id @default(uuid()) @map("unit_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  unitName    String   @map("unit_name")
+  unitCode    String   @map("unit_code")
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  @@unique([tenant_id, name])
-  @@unique([tenant_id, symbol])
+  shop        Shop     @relation(fields: [tenantId], references: [id])
+  products    Product[]
+
+  @@unique([tenantId, unitCode])
+  @@index([tenantId])
   @@map("units")
 }
 
-// This model defines the structure for the "Product" entity, including its unique identifier,
-// tenant association, and relationship to a "Category". The "category_id" field establishes
-// a foreign key relationship with the "Category" model. The table is mapped to "products" in the database.
-// Currently, this model is commented out and not active in the schema.
-// For test the relationship with product and categories
-//model Product {
-//  id          String   @id @default(uuid()) @db.Uuid
-//  tenant_id   String   @db.Uuid
-//  category_id String   @db.Uuid
-//  category    Category @relation(fields: [category_id], references: [id])
-//  @@map("products")
-//}
+
 model User {
-  user_id               String    @id @default(uuid())
-  tenant_id             String
+  user_id               String    @id @default(uuid()) @db.Uuid
+  tenant_id             String    @db.Uuid
   email                 String    @unique
   password_hash         String
   first_name            String?
@@ -93,3 +94,4 @@ model User {
 
   @@map("users")
 }
+
