@@ -15,7 +15,7 @@ export class AuthService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // BE-PSW-01 + BE-PSW-02
+  
   async requestPasswordReset(email: string): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -39,13 +39,13 @@ export class AuthService {
       throw new InternalServerErrorException('Failed to generate code');
     }
 
-    // TODO: Replace with real email service later
+    
     this.logger.log(`✅ Password reset code for ${email}: ${code}`);
 
     return { message: 'Verification email sent successfully' };
   }
 
-  // BE-PSW-03 + BE-PSW-04
+ 
   async resetPassword(
     email: string,
     verification_code: string,
@@ -56,22 +56,22 @@ export class AuthService {
       throw new NotFoundException('Email not registered');
     }
 
-    // 1. Token exist ද check කරනවා
+    
     if (!user.passwordResetToken || !user.passwordResetExpiry) {
       throw new UnauthorizedException('No password reset request found');
     }
 
-    // 2. දැනටමත් use වෙලාද check කරනවා
+    
     if (user.passwordResetUsed) {
       throw new UnauthorizedException('Verification code already used');
     }
 
-    // 3. Code correct ද check කරනවා
+    
     if (user.passwordResetToken !== verification_code) {
       throw new UnauthorizedException('Invalid verification code');
     }
 
-    // 4. Expire වෙලාද check කරනවා
+    
     if (user.passwordResetExpiry < new Date()) {
       throw new UnauthorizedException('Verification code has expired');
     }
