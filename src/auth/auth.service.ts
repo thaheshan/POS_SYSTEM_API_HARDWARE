@@ -56,14 +56,24 @@ export class AuthService {
       throw new NotFoundException('Email not registered');
     }
 
-    if (
-      !user.passwordResetToken ||
-      user.passwordResetUsed ||
-      user.passwordResetToken !== verification_code ||
-      !user.passwordResetExpiry ||
-      user.passwordResetExpiry < new Date()
-    ) {
-      throw new UnauthorizedException('Invalid or expired verification code');
+    // 1. Token exist ද check කරනවා
+    if (!user.passwordResetToken || !user.passwordResetExpiry) {
+      throw new UnauthorizedException('No password reset request found');
+    }
+
+    // 2. දැනටමත් use වෙලාද check කරනවා
+    if (user.passwordResetUsed) {
+      throw new UnauthorizedException('Verification code already used');
+    }
+
+    // 3. Code correct ද check කරනවා
+    if (user.passwordResetToken !== verification_code) {
+      throw new UnauthorizedException('Invalid verification code');
+    }
+
+    // 4. Expire වෙලාද check කරනවා
+    if (user.passwordResetExpiry < new Date()) {
+      throw new UnauthorizedException('Verification code has expired');
     }
 
     const hashedPassword = await bcrypt.hash(new_password, 10);
