@@ -21,17 +21,7 @@ import {
   TenantIdRequiredException,
   VariantsRequiredException,
 } from '../common/exceptions/product.exceptions';
-
-export interface CacheClient {
-  get(key: string): Promise<string | null>;
-  set(
-    key: string,
-    value: string,
-    mode: 'EX',
-    ttlSeconds: number,
-  ): Promise<'OK' | null>;
-  del(...keys: string[]): Promise<number>;
-}
+import type { CacheClient } from 'src/cache/cache-client.interface';
 
 @Injectable()
 export class ProductService {

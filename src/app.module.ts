@@ -9,6 +9,7 @@ import { SystemModule } from './system/system.module';
 import { ProductModule } from './product/product.module';
 import { StockModule } from './stock/stock.module';
 import { AuthModule } from './auth/auth.module';
+import { RedisModule } from './cache/redis.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AuthModule } from './auth/auth.module';
     SystemModule,
     ProductModule,
     StockModule,
+    RedisModule,
     AuthModule,
   ],
   controllers: [AppController],

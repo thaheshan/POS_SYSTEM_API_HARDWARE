@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { redisClientProvider } from '../config/redis.config';
+import { redisClientProvider } from '../cache/redis.provider';
 import { ProductService } from './product.service';
 import { ProductController } from './product.controller';
 import { StockModule } from '../stock/stock.module';

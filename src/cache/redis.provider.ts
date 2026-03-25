@@ -1,7 +1,6 @@
 import Redis from 'ioredis';
-import { CacheClient } from '../product/product.service';
-
-export const REDIS_CLIENT = 'REDIS_CLIENT';
+import { CacheClient } from './cache-client.interface';
+import { REDIS_CLIENT } from './cache.constants';
 
 export const redisClientProvider = {
   provide: REDIS_CLIENT,
