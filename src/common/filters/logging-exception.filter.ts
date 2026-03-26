@@ -1,4 +1,9 @@
-import { Catch, ArgumentsHost, Logger } from '@nestjs/common';
+import {
+  Catch,
+  ArgumentsHost,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
 
 @Catch()

@@ -424,24 +424,20 @@ export class ProductService {
     }
 
     const year = new Date().getFullYear();
-    const sequence = await this.prisma.productSkuSequence.upsert({
+    const prefix = `SKU-${category.categoryCode}-${year}-`;
+    const latest = await this.prisma.product.findFirst({
       where: {
-        tenantId_categoryId_year: {
-          tenantId,
-          categoryId,
-          year,
-        },
-      },
-      update: { seq: { increment: 1 } },
-      create: {
         tenantId,
         categoryId,
-        year,
-        seq: 1,
+        sku: { startsWith: prefix },
       },
+      select: { sku: true },
+      orderBy: { sku: 'desc' },
     });
 
-    const padded = sequence.seq.toString().padStart(6, '0');
+    const last = latest?.sku ? Number(latest.sku.split('-').at(-1)) : 0;
+    const next = Number.isFinite(last) ? last + 1 : 1;
+    const padded = next.toString().padStart(6, '0');
     return `SKU-${category.categoryCode}-${year}-${padded}`;
   }
 
