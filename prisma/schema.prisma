@@ -25,3 +25,21 @@ model User {
 
   @@map("users")
 }
+
+model Warehouse {
+  id                String    @id @default(uuid())
+  tenant_id         String
+  branch_id         String?
+  warehouse_name    String
+  warehouse_code    String
+  warehouse_type    String    // main / branch_store / damage / transit
+  address           String?
+  is_active         Boolean   @default(true)
+  is_default_for_pos Boolean  @default(false)
+  created_by        String?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@unique([warehouse_code, tenant_id])
+  @@map("warehouses")
+}
