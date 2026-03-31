@@ -5,6 +5,10 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
+import { StockService } from './inventory/stock/stock.service';
+import { StockController } from './inventory/stock/stock.controller';
+import { InventoryModule } from './inventory/inventory.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -14,8 +18,10 @@ import { AuthModule } from './auth/auth.module';
     PrismaModule,
     SystemModule,
     AuthModule,
+    InventoryModule,
+    ScheduleModule.forRoot(),
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, StockController],
+  providers: [AppService, StockService],
 })
 export class AppModule {}

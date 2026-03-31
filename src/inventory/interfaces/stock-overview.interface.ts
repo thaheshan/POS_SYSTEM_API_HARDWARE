@@ -1,0 +1,14 @@
+export interface StockOverviewResponse {
+  product_id: string;
+  variant_id: string | null;
+  warehouse_id: string;
+  warehouse_name: string;
+  product_name: string;
+  sku: string;
+  quantity: number;
+  reserved_quantity: number;
+  available_quantity: number;
+  damaged_quantity: number;
+  low_stock: boolean;
+  out_of_stock: boolean;
+}
