@@ -34,8 +34,41 @@ enum TaxCategory {
   exempt
 }
 
+enum StockMovementType {
+  in
+  out
+  adjustment
+  transfer
+  return
+  damage
+}
 
+enum WarehouseType {
+  main
+  branch_store
+  damage
+  transit
+}
 
+enum StockAdjustmentType {
+  physical_count
+  damage
+  expiry
+  correction
+}
+
+enum StockAdjustmentStatus {
+  draft
+  approved
+  rejected
+}
+
+enum StockTransferStatus {
+  pending
+  in_transit
+  received
+  cancelled
+}
 
 
 model Shop {
@@ -62,13 +95,17 @@ model Shop {
   createdAt               DateTime            @default(now()) @map("created_at")
   updatedAt               DateTime            @updatedAt @map("updated_at")
 
-  
+  branches                Branch[]
+  warehouses              Warehouse[]
   categories              Category[]
   brands                  Brand[]
   units                   Unit[]
   products                Product[]
   productVariants          ProductVariant[]
   stocks                  Stock[]
+  stockMovements           StockMovement[]
+  stockAdjustments         StockAdjustment[]
+  stockTransfers           StockTransfer[]
  
 
   @@map("shops")
@@ -92,14 +129,74 @@ model User {
   account_locked_until  DateTime?
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
+
+  stockAdjustments    StockAdjustment[] @relation("StockAdjustmentCreatedBy")
+  stockApprovals      StockAdjustment[] @relation("StockAdjustmentApprovedBy")
   createdProducts     Product[] @relation("ProductCreatedBy")
+  managedBranches     Branch[] @relation("BranchManager")
+  managedWarehouses   Warehouse[] @relation("WarehouseManager")
+  stockMovements      StockMovement[]
  
+
 
   @@index([tenant_id])
   @@map("users")
 }
 
+model Branch {
+  id          String   @id @default(uuid()) @map("branch_id")
+  tenantId    String   @map("tenant_id")
+  branchName  String   @map("branch_name")
+  branchCode  String?  @unique @map("branch_code")
+  address     String?
+  city        String?
+  postalCode  String?  @map("postal_code")
+  phone       String?
+  email       String?
+  managerId   String?  @map("manager_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
+  shop        Shop     @relation(fields: [tenantId], references: [id])
+  manager     User?    @relation("BranchManager", fields: [managerId], references: [user_id])
+  warehouses  Warehouse[]
+  stocks      Stock[]
+
+  @@index([tenantId])
+  @@map("branches")
+}
+
+model Warehouse {
+  id            String   @id @default(uuid()) @map("warehouse_id")
+  tenantId      String   @map("tenant_id")
+  branchId      String?  @map("branch_id")
+  warehouseName String   @map("warehouse_name")
+  warehouseCode String?  @unique @map("warehouse_code")
+  warehouse_type WarehouseType? @map("warehouse_type")
+  address       String?
+  capacity      Decimal? @db.Decimal(10, 2)
+  managerId     String?  @map("manager_id")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  shop          Shop     @relation(fields: [tenantId], references: [id])
+  branch        Branch?  @relation(fields: [branchId], references: [id])
+  manager       User?    @relation("WarehouseManager", fields: [managerId], references: [user_id])
+  
+  stocks        Stock[]
+  binLocations  BinLocation[]
+  stockMovements StockMovement[]
+  stockAdjustments StockAdjustment[]
+  stockTransfersFrom StockTransfer[] @relation("StockTransferFrom")
+  stockTransfersTo   StockTransfer[] @relation("StockTransferTo")
+  
+  
+
+  @@index([tenantId])
+  @@map("warehouses")
+}
 
 
 
@@ -198,6 +295,9 @@ model Product {
   variants            ProductVariant[]
   images              ProductImage[]
   stocks              Stock[]
+  stockMovements      StockMovement[]
+  stockAdjustmentItems StockAdjustmentItem[]
+  stockTransferItems  StockTransferItem[]
   
 
   @@unique([tenantId, sku])
@@ -224,6 +324,9 @@ model ProductVariant {
   product           Product  @relation(fields: [productId], references: [id])
   shop              Shop     @relation(fields: [tenantId], references: [id])
   stocks            Stock[]
+  stockMovements    StockMovement[]
+  stockAdjustmentItems StockAdjustmentItem[]
+  stockTransferItems StockTransferItem[]
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
@@ -262,6 +365,8 @@ model Stock {
   shop            Shop     @relation(fields: [tenantId], references: [id])
   product         Product  @relation(fields: [productId], references: [id])
   variant         ProductVariant? @relation(fields: [variantId], references: [id])
+  warehouse       Warehouse? @relation(fields: [warehouseId], references: [id])
+  branch          Branch?  @relation(fields: [branchId], references: [id])
 
   @@index([tenantId, branchId])
   @@index([tenantId, productId])
@@ -269,6 +374,137 @@ model Stock {
   @@map("stock")
 }
 
+model StockMovement {
+  id            String   @id @default(uuid()) @map("movement_id")
+  tenantId      String   @map("tenant_id")
+  productId     String   @map("product_id")
+  variantId     String?  @map("variant_id")
+  warehouseId   String?  @map("warehouse_id")
+  movementType  StockMovementType @map("movement_type")
+  quantity      Decimal  @db.Decimal(10, 2)
+  beforeQuantity Decimal? @db.Decimal(10, 2) @map("before_quantity")
+  afterQuantity Decimal?  @db.Decimal(10, 2) @map("after_quantity")
+  unitCost      Decimal?  @db.Decimal(10, 2) @map("unit_cost")
+  totalCost     Decimal?  @db.Decimal(10, 2) @map("total_cost")
+  referenceType String?   @map("reference_type")
+  referenceId   String?   @map("reference_id")
+  notes         String?
+  createdBy     String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  shop          Shop      @relation(fields: [tenantId], references: [id])
+  product       Product   @relation(fields: [productId], references: [id])
+  variant       ProductVariant? @relation(fields: [variantId], references: [id])
+  warehouse     Warehouse? @relation(fields: [warehouseId], references: [id])
+  creator       User?     @relation(fields: [createdBy], references: [user_id])
+
+  @@index([tenantId, productId])
+  @@map("stock_movements")
+}
+
+
+model StockAdjustment {
+  id            String   @id @default(uuid()) @map("adjustment_id")
+  tenantId      String   @map("tenant_id")
+  warehouseId   String?  @map("warehouse_id")
+  adjustmentDate DateTime @db.Date @map("adjustment_date")
+  adjustmentType StockAdjustmentType @map("adjustment_type")
+  reason        String?
+  status        StockAdjustmentStatus @map("status")
+  approvedBy    String?  @map("approved_by")
+  approvedAt    DateTime? @map("approved_at")
+  createdBy     String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  shop          Shop     @relation(fields: [tenantId], references: [id])
+  warehouse     Warehouse? @relation(fields: [warehouseId], references: [id])
+  creator       User?    @relation("StockAdjustmentCreatedBy", fields: [createdBy], references: [user_id])
+  approver      User?    @relation("StockAdjustmentApprovedBy", fields: [approvedBy], references: [user_id])
+  items         StockAdjustmentItem[]
+
+  @@index([tenantId])
+  @@map("stock_adjustments")
+}
+
+model StockAdjustmentItem {
+  id            String   @id @default(uuid()) @map("adjustment_item_id")
+  adjustmentId  String   @map("adjustment_id")
+  productId     String   @map("product_id")
+  variantId     String?  @map("variant_id")
+  systemQuantity Decimal? @db.Decimal(10, 2) @map("system_quantity")
+  actualQuantity Decimal? @db.Decimal(10, 2) @map("actual_quantity")
+  difference    Decimal? @db.Decimal(10, 2)
+  unitCost      Decimal? @db.Decimal(10, 2) @map("unit_cost")
+  totalValue    Decimal? @db.Decimal(10, 2) @map("total_value")
+  notes         String?
+
+  adjustment    StockAdjustment @relation(fields: [adjustmentId], references: [id])
+  product       Product   @relation(fields: [productId], references: [id])
+  variant       ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([adjustmentId])
+  @@map("stock_adjustment_items")
+}
+
+model StockTransfer {
+  id              String   @id @default(uuid()) @map("transfer_id")
+  tenantId        String   @map("tenant_id")
+  transferNumber  String   @unique @map("transfer_number")
+  fromWarehouseId String?  @map("from_warehouse_id")
+  toWarehouseId   String?  @map("to_warehouse_id")
+  transferDate    DateTime @db.Date @map("transfer_date")
+  status          StockTransferStatus
+  notes           String?
+  requestedBy     String?  @map("requested_by")
+  approvedBy      String?  @map("approved_by")
+  receivedBy      String?  @map("received_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  shop            Shop     @relation(fields: [tenantId], references: [id])
+  fromWarehouse   Warehouse? @relation("StockTransferFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouse     Warehouse? @relation("StockTransferTo", fields: [toWarehouseId], references: [id])
+  items           StockTransferItem[]
+
+  @@index([tenantId])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id               String   @id @default(uuid()) @map("transfer_item_id")
+  transferId       String   @map("transfer_id")
+  productId        String   @map("product_id")
+  variantId        String?  @map("variant_id")
+  quantityRequested Decimal? @db.Decimal(10, 2) @map("quantity_requested")
+  quantitySent     Decimal? @db.Decimal(10, 2) @map("quantity_sent")
+  quantityReceived Decimal? @db.Decimal(10, 2) @map("quantity_received")
+  unitCost         Decimal? @db.Decimal(10, 2) @map("unit_cost")
+
+  transfer         StockTransfer @relation(fields: [transferId], references: [id])
+  product          Product   @relation(fields: [productId], references: [id])
+  variant          ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([transferId])
+  @@map("stock_transfer_items")
+}
+
+model BinLocation {
+  id          String   @id @default(uuid()) @map("bin_id")
+  warehouseId String   @map("warehouse_id")
+  binCode     String   @map("bin_code")
+  aisle       String?
+  rack        String?
+  shelf       String?
+  capacity    Decimal? @db.Decimal(10, 2)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@index([warehouseId])
+  @@map("bin_locations")
+}
 
 
 

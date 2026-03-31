@@ -1,0 +1,254 @@
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+import {
+  GetStockMovementsDto,
+  StockMovementResponse,
+  StockMovementsPaginatedResponse,
+} from './dto/get-stock-movements.dto';
+
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+
+@Injectable()
+export class StockMovementsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async getMovements(
+    tenantId: string,
+    filters: GetStockMovementsDto,
+  ): Promise<StockMovementsPaginatedResponse> {
+    const {
+      productId,
+      variantId,
+      warehouseId,
+      movementType,
+      createdBy,
+      startDate,
+      endDate,
+      limit = 50,
+      cursor,
+    } = filters;
+
+    // Build dynamic where clause
+    const where: Prisma.StockMovementWhereInput = {
+      tenantId,
+    };
+
+    if (productId) {
+      where.productId = productId;
+    }
+
+    if (variantId) {
+      where.variantId = variantId;
+    }
+
+    if (warehouseId) {
+      where.warehouseId = warehouseId;
+    }
+
+    if (movementType) {
+      where.movementType = movementType;
+    }
+
+    if (createdBy) {
+      where.createdBy = createdBy;
+    }
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        // Add 1 day to endDate to include entire day
+        const end = new Date(endDate);
+        end.setDate(end.getDate() + 1);
+        where.createdAt.lt = end;
+      }
+    }
+
+    const selectClause = {
+      id: true,
+      tenantId: true,
+      productId: true,
+      variantId: true,
+      warehouseId: true,
+      movementType: true,
+      quantity: true,
+      beforeQuantity: true,
+      afterQuantity: true,
+      unitCost: true,
+      totalCost: true,
+      referenceType: true,
+      referenceId: true,
+      notes: true,
+      createdBy: true,
+      createdAt: true,
+      product: {
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          barcode: true,
+        },
+      },
+      variant: {
+        select: {
+          id: true,
+          variantName: true,
+          sku: true,
+        },
+      },
+      warehouse: {
+        select: {
+          id: true,
+          warehouseName: true,
+          warehouseCode: true,
+        },
+      },
+      creator: {
+        select: {
+          user_id: true,
+          first_name: true,
+          last_name: true,
+          email: true,
+        },
+      },
+    } as const;
+
+    // Fetch limit + 1 to determine if there are more records
+    const movements = await this.prisma.stockMovement.findMany({
+      where,
+      select: selectClause,
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: limit + 1,
+      skip: cursor ? 1 : 0,
+      ...(cursor && { cursor: { id: cursor } }),
+    });
+
+    // Determine if there are more records
+    let hasMore = false;
+    let nextCursor: string | null = null;
+
+    if (movements.length > limit) {
+      hasMore = true;
+      movements.pop(); // Remove the extra record
+      const lastMovement = movements[movements.length - 1];
+      nextCursor = lastMovement.id;
+    }
+
+    // Convert Decimal to string for JSON response
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    const data: StockMovementResponse[] = movements.map((movement) => ({
+      ...movement,
+      quantity: movement.quantity.toString(),
+      beforeQuantity: movement.beforeQuantity?.toString() || null,
+      afterQuantity: movement.afterQuantity?.toString() || null,
+      unitCost: movement.unitCost?.toString() || null,
+      totalCost: movement.totalCost?.toString() || null,
+    }));
+
+    return {
+      data,
+      pagination: {
+        nextCursor,
+        hasMore,
+        limit,
+      },
+    };
+  }
+
+  /**
+   * Phase 4: Record stock transfer movements (append-only audit)
+   * Creates 2 movements (one for each warehouse) when a stock transfer is approved
+   * Movement 1: from warehouse (negative quantity)
+   * Movement 2: to warehouse (positive quantity)
+   */
+  async recordTransferMovements(
+    transferId: string,
+    fromWarehouseId: string,
+    toWarehouseId: string,
+    items: Array<{
+      productId: string;
+      variantId: string | null;
+      quantity: string; // Decimal as string
+    }>,
+    tenantId: string,
+    createdBy: string,
+  ): Promise<void> {
+    // Use transaction to ensure both movements are created atomically
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of items) {
+        const quantity = new Prisma.Decimal(item.quantity);
+
+        // Get current stock at source warehouse to capture before/after quantities
+        const fromStockBefore = await tx.stock.findFirst({
+          where: {
+            tenantId,
+            productId: item.productId,
+            warehouseId: fromWarehouseId,
+            variantId: item.variantId || undefined,
+          },
+          select: { quantity: true },
+        });
+
+        const fromQuantityBefore =
+          fromStockBefore?.quantity || new Prisma.Decimal(0);
+        const fromQuantityAfter = fromQuantityBefore.minus(quantity);
+
+        // Get current stock at destination warehouse
+        const toStockBefore = await tx.stock.findFirst({
+          where: {
+            tenantId,
+            productId: item.productId,
+            warehouseId: toWarehouseId,
+            variantId: item.variantId || undefined,
+          },
+          select: { quantity: true },
+        });
+
+        const toQuantityBefore =
+          toStockBefore?.quantity || new Prisma.Decimal(0);
+        const toQuantityAfter = toQuantityBefore.plus(quantity);
+
+        // Movement 1: Stock leaving from warehouse
+        await tx.stockMovement.create({
+          data: {
+            tenantId,
+            productId: item.productId,
+            variantId: item.variantId || undefined,
+            warehouseId: fromWarehouseId,
+            movementType: 'transfer',
+            quantity: quantity.negated(), // Negative quantity
+            beforeQuantity: fromQuantityBefore,
+            afterQuantity: fromQuantityAfter,
+            referenceType: 'StockTransfer',
+            referenceId: transferId,
+            createdBy,
+          },
+        });
+
+        // Movement 2: Stock arriving at destination warehouse
+        await tx.stockMovement.create({
+          data: {
+            tenantId,
+            productId: item.productId,
+            variantId: item.variantId || undefined,
+            warehouseId: toWarehouseId,
+            movementType: 'transfer',
+            quantity, // Positive quantity
+            beforeQuantity: toQuantityBefore,
+            afterQuantity: toQuantityAfter,
+            referenceType: 'StockTransfer',
+            referenceId: transferId,
+            createdBy,
+          },
+        });
+      }
+    });
+  }
+}

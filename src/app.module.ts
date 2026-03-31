@@ -10,6 +10,7 @@ import { ProductModule } from './product/product.module';
 import { StockModule } from './stock/stock.module';
 import { AuthModule } from './auth/auth.module';
 import { RedisModule } from './cache/redis.module';
+import { InventoryModule } from './inventory/inventory.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { RedisModule } from './cache/redis.module';
     StockModule,
     RedisModule,
     AuthModule,
+    InventoryModule,
   ],
   controllers: [AppController],
   providers: [
