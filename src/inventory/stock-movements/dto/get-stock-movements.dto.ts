@@ -47,6 +47,14 @@ export class GetStockMovementsDto {
   @IsOptional()
   @IsString()
   cursor?: string;
+
+  @IsOptional()
+  @IsString()
+  referenceType?: string;
+
+  @IsOptional()
+  @IsString()
+  referenceId?: string;
 }
 
 export class StockMovementResponse {

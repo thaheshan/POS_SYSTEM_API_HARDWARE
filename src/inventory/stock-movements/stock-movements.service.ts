@@ -27,6 +27,8 @@ export class StockMovementsService {
       createdBy,
       startDate,
       endDate,
+      referenceType,
+      referenceId,
       limit = 50,
       cursor,
     } = filters;
@@ -50,6 +52,14 @@ export class StockMovementsService {
 
     if (movementType) {
       where.movementType = movementType;
+    }
+
+    if (referenceType) {
+      where.referenceType = referenceType;
+    }
+
+    if (referenceId) {
+      where.referenceId = referenceId;
     }
 
     if (createdBy) {
