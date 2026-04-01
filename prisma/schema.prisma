@@ -43,3 +43,74 @@ model Warehouse {
   @@unique([warehouse_code, tenant_id])
   @@map("warehouses")
 }
+
+model StockTransfer {
+  id                String              @id @default(uuid())
+  transfer_number   String              @unique
+  tenant_id         String
+  from_warehouse_id String
+  to_warehouse_id   String
+  status            String              @default("pending") // pending / in_transit / received / cancelled
+  created_by        String?
+  approved_by       String?
+  received_by       String?
+  created_at        DateTime            @default(now())
+  approved_at       DateTime?
+  received_at       DateTime?
+  updated_at        DateTime            @updatedAt
+  items             StockTransferItem[]
+
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id                 String        @id @default(uuid())
+  transfer_id        String
+  product_id         String
+  quantity_requested Float
+  quantity_sent      Float?
+  quantity_received  Float?
+  discrepancy_flag   Boolean       @default(false)
+  transfer           StockTransfer @relation(fields: [transfer_id], references: [id])
+
+  @@map("stock_transfer_items")
+}
+
+model Stock {
+  id           String   @id @default(uuid())
+  tenant_id    String
+  warehouse_id String
+  product_id   String
+  quantity     Float    @default(0)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([warehouse_id, product_id])
+  @@map("stocks")
+}
+
+model StockMovement {
+  id           String   @id @default(uuid())
+  tenant_id    String
+  warehouse_id String
+  product_id   String
+  type         String   // transfer_in / transfer_out
+  quantity     Float
+  reference_id String?  // transfer_id
+  created_at   DateTime @default(now())
+
+  @@map("stock_movements")
+}
+
+model TenantFeature {
+  id         String   @id @default(uuid())
+  tenant_id  String
+  feature    String   // multi_branch, pos, grn, etc.
+  is_enabled Boolean  @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([tenant_id, feature])
+  @@map("tenant_features")
+
+}
