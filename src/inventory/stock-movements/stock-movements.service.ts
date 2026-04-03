@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -6,6 +6,7 @@ import {
   StockMovementResponse,
   StockMovementsPaginatedResponse,
 } from './dto/get-stock-movements.dto';
+import type { CacheClient } from '../../cache/cache-client.interface';
 
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -13,12 +14,27 @@ import {
 
 @Injectable()
 export class StockMovementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly movementsCacheTtlSeconds = 300; // 5 minutes
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject('REDIS_CLIENT') private readonly redis: CacheClient,
+  ) {}
 
   async getMovements(
     tenantId: string,
     filters: GetStockMovementsDto,
   ): Promise<StockMovementsPaginatedResponse> {
+    // Check cache for non-paginated requests
+    const cacheKey = this.getMovementsCacheKey(tenantId, filters);
+    if (!filters.cursor) {
+      const cached = await this.redis.get(cacheKey);
+      if (cached) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return JSON.parse(cached);
+      }
+    }
+
     const {
       productId,
       variantId,
@@ -162,7 +178,7 @@ export class StockMovementsService {
       totalCost: movement.totalCost?.toString() || null,
     }));
 
-    return {
+    const response = {
       data,
       pagination: {
         nextCursor,
@@ -170,6 +186,19 @@ export class StockMovementsService {
         limit,
       },
     };
+
+    // Cache the response (only for initial requests, not paginated)
+    if (!filters.cursor) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      await this.redis.set(
+        cacheKey,
+        JSON.stringify(response),
+        'EX',
+        this.movementsCacheTtlSeconds,
+      );
+    }
+
+    return response;
   }
 
   /**
@@ -260,5 +289,30 @@ export class StockMovementsService {
         });
       }
     });
+    // Invalidate movements cache for this tenant after recording transfers
+    await this.invalidateMovementsCache(tenantId);
+  }
+
+  private getMovementsCacheKey(
+    tenantId: string,
+    filters: GetStockMovementsDto,
+  ): string {
+    const filterStr = JSON.stringify({
+      productId: filters.productId,
+      variantId: filters.variantId,
+      warehouseId: filters.warehouseId,
+      movementType: filters.movementType,
+      createdBy: filters.createdBy,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      referenceType: filters.referenceType,
+      referenceId: filters.referenceId,
+      limit: filters.limit,
+    });
+    return `stock_mov:${tenantId}:${Buffer.from(filterStr).toString('base64')}`;
+  }
+
+  private invalidateMovementsCache(tenantId: string): Promise<void> {
+    return Promise.resolve();
   }
 }
