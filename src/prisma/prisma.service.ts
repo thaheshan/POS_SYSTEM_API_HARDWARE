@@ -19,19 +19,19 @@ export class PrismaService
   private readonly client: PrismaClient;
 
   constructor() {
-    const pool = new Pool({
-      host: 'aws-1-ap-southeast-1.pooler.supabase.com',
-      port: 5432,
-      database: 'postgres',
-      user: 'postgres.wftdcqgueuelimbakhhx',
-      password: process.env.DB_PASSWORD,
-      ssl: { rejectUnauthorized: false },
-    });
+  const pool = new Pool({
+    host: 'aws-1-ap-south-1.pooler.supabase.com',
+    port: 5432,
+    database: 'postgres',
+    user: 'postgres.cudihrchqrvmrtjbbobq',
+    password: process.env.DB_PASSWORD,
+    ssl: { rejectUnauthorized: false },
+  });
 
-    const adapter = new PrismaPg(pool);
-    super({ adapter });
-    this.client = this as unknown as PrismaClient;
-  }
+  const adapter = new PrismaPg(pool);
+  super({ adapter });
+  this.client = this as unknown as PrismaClient;
+}
 
   get db(): PrismaClient {
     return this.client;

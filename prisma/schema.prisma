@@ -6,22 +6,135 @@ datasource db {
   provider = "postgresql"
 }
 
+// ================= ENUMS =================
+enum TaxCategory {
+  standard_vat
+  zero_vat
+  exempt
+}
+
+enum PaymentMethod {
+  cash
+  card
+  bank
+  credit
+  split
+}
+
+enum InvoiceStatus {
+  completed
+  held
+  cancelled
+}
+
+// ================= MODELS =================
 model User {
-  user_id               String    @id @default(uuid())
+  user_id               String         @id @default(uuid())
   tenant_id             String
-  email                 String    @unique
+  email                 String         @unique
   password_hash         String
   first_name            String?
   last_name             String?
-  role                  String    @default("cashier")
-  is_active             Boolean   @default(true)
-  is_verified           Boolean   @default(false)
-  two_factor_enabled    Boolean   @default(false)
+  role                  String         @default("cashier")
+  is_active             Boolean        @default(true)
+  is_verified           Boolean        @default(false)
+  two_factor_enabled    Boolean        @default(false)
   last_login            DateTime?
-  failed_login_attempts Int       @default(0)
+  failed_login_attempts Int            @default(0)
   account_locked_until  DateTime?
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @updatedAt
+  created_at            DateTime       @default(now())
+  updated_at            DateTime       @updatedAt
+
+  salesInvoices         SalesInvoice[] @relation("InvoiceCashier")
 
   @@map("users")
+}
+
+model SalesInvoice {
+  id             String             @id @default(uuid())
+  invoice_number String             @unique
+  tenant_id      String
+  branch_id      String
+  cashier_id     String
+  customer_id    String?
+  subtotal       Float              @default(0)
+  discount_total Float              @default(0)
+  vat_total      Float              @default(0)
+  grand_total    Float              @default(0)
+  status         InvoiceStatus      @default(completed)
+  created_at     DateTime           @default(now())
+  updated_at     DateTime           @updatedAt
+
+  cashier        User               @relation("InvoiceCashier", fields: [cashier_id], references: [user_id])
+  items          SalesInvoiceItem[]
+  payments       Payment[]
+
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceItem {
+  id           String        @id @default(uuid())
+  invoice_id   String
+  product_id   String
+  quantity     Float
+  unit_price   Float
+  cost_price   Float
+  line_total   Float
+  line_tax     Float         @default(0)
+  profit       Float         @default(0)
+  tax_category TaxCategory   @default(standard_vat)
+
+  invoice      SalesInvoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade) // 👈 cascade
+
+  @@map("sales_invoice_items")
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  invoice_id     String
+  payment_method PaymentMethod 
+  amount         Float
+  reference      String?
+  created_at     DateTime      @default(now())
+
+  invoice        SalesInvoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model HeldBill {
+  id             String   @id @default(uuid())
+  cashier_id     String
+  cart_items     Json
+  reserved_stock Json?
+  created_at     DateTime @default(now())
+  expires_at     DateTime
+
+  @@map("held_bills")
+}
+
+model Stock {
+  id           String   @id @default(uuid())
+  tenant_id    String
+  warehouse_id String
+  product_id   String
+  quantity     Float    @default(0)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([warehouse_id, product_id])
+  @@map("stocks")
+}
+
+model StockMovement {
+  id           String   @id @default(uuid())
+  tenant_id    String
+  warehouse_id String
+  product_id   String
+  type         String
+  quantity     Float
+  reference_id String?
+  created_at   DateTime @default(now())
+
+  @@map("stock_movements")
 }
