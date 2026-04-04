@@ -84,7 +84,7 @@ model SalesInvoiceItem {
   profit       Float         @default(0)
   tax_category TaxCategory   @default(standard_vat)
 
-  invoice      SalesInvoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade) // 👈 cascade
+  invoice      SalesInvoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
 
   @@map("sales_invoice_items")
 }
