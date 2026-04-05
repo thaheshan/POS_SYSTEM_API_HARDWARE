@@ -59,6 +59,7 @@ enum RefundMethod {
   CASH
   CREDIT_NOTE
   EXCHANGE
+  ACCOUNT_DEDUCTION
 }
 
 enum CreditNoteStatus {
