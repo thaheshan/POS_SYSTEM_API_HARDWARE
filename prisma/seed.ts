@@ -31,7 +31,7 @@ async function main() {
       tenant_id: shop.id,
       email: 'admin@test.com',
       password_hash:
-        '$2b$10$Ep/r5q9m.2g1T8E8mP4l.eH2D/E1/uY.0O7C6X/s1A2B3C4D5E6F7', // password123
+        '$2a$12$uZp7qIeGIQ.8/w7/.MeNfuZf4R8ljI4EDhDXZ/3edF1St52cP6mg2', // password123
       first_name: 'System',
       last_name: 'Admin',
       role: 'admin',
