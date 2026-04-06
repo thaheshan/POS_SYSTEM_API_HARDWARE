@@ -29,112 +29,145 @@ enum InvoiceStatus {
 
 // ================= MODELS =================
 model User {
-  user_id               String         @id @default(uuid())
-  tenant_id             String
-  email                 String         @unique
-  password_hash         String
-  first_name            String?
-  last_name             String?
-  role                  String         @default("cashier")
-  is_active             Boolean        @default(true)
-  is_verified           Boolean        @default(false)
-  two_factor_enabled    Boolean        @default(false)
-  last_login            DateTime?
-  failed_login_attempts Int            @default(0)
-  account_locked_until  DateTime?
-  created_at            DateTime       @default(now())
-  updated_at            DateTime       @updatedAt
+  userId              String         @id @default(uuid()) @map("user_id")
+  tenantId            String         @map("tenant_id")
+  email               String         @unique
+  passwordHash        String         @map("password_hash")
+  firstName           String?        @map("first_name")
+  lastName            String?        @map("last_name")
+  role                String         @default("cashier")
+  isActive            Boolean        @default(true) @map("is_active")
+  isVerified          Boolean        @default(false) @map("is_verified")
+  twoFactorEnabled    Boolean        @default(false) @map("two_factor_enabled")
+  lastLogin           DateTime?      @map("last_login")
+  failedLoginAttempts Int            @default(0) @map("failed_login_attempts")
+  accountLockedUntil  DateTime?      @map("account_locked_until")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
 
-  salesInvoices         SalesInvoice[] @relation("InvoiceCashier")
+  salesInvoices       SalesInvoice[] @relation("InvoiceCashier")
 
   @@map("users")
 }
 
 model SalesInvoice {
-  id             String             @id @default(uuid())
-  invoice_number String             @unique
-  tenant_id      String
-  branch_id      String
-  cashier_id     String
-  customer_id    String?
-  subtotal       Float              @default(0)
-  discount_total Float              @default(0)
-  vat_total      Float              @default(0)
-  grand_total    Float              @default(0)
-  status         InvoiceStatus      @default(completed)
-  created_at     DateTime           @default(now())
-  updated_at     DateTime           @updatedAt
+  id            String             @id @default(uuid())
+  invoiceNumber String             @unique @map("invoice_number")
+  tenantId      String             @map("tenant_id")
+  branchId      String             @map("branch_id")
+  cashierId     String             @map("cashier_id")
+  customerId    String?            @map("customer_id")
+  subtotal      Float              @default(0)
+  discountTotal Float              @default(0) @map("discount_total")
+  vatTotal      Float              @default(0) @map("vat_total")
+  grandTotal    Float              @default(0) @map("grand_total")
+  status        String             @default("completed")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
 
-  cashier        User               @relation("InvoiceCashier", fields: [cashier_id], references: [user_id])
-  items          SalesInvoiceItem[]
-  payments       Payment[]
+  cashier       User               @relation("InvoiceCashier", fields: [cashierId], references: [userId])
+  items         SalesInvoiceItem[]
+  payments      Payment[]
 
   @@map("sales_invoices")
 }
 
 model SalesInvoiceItem {
-  id           String        @id @default(uuid())
-  invoice_id   String
-  product_id   String
-  quantity     Float
-  unit_price   Float
-  cost_price   Float
-  line_total   Float
-  line_tax     Float         @default(0)
-  profit       Float         @default(0)
-  tax_category TaxCategory   @default(standard_vat)
+  id          String       @id @default(uuid())
+  invoiceId   String       @map("invoice_id")
+  productId   String       @map("product_id")
+  quantity    Float
+  unitPrice   Float        @map("unit_price")
+  costPrice   Float        @map("cost_price")
+  lineTotal   Float        @map("line_total")
+  lineTax     Float        @default(0) @map("line_tax")
+  profit      Float        @default(0)
+  taxCategory String       @default("standard_vat") @map("tax_category")
 
-  invoice      SalesInvoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  invoice     SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@map("sales_invoice_items")
 }
 
 model Payment {
-  id             String        @id @default(uuid())
-  invoice_id     String
-  payment_method PaymentMethod 
-  amount         Float
-  reference      String?
-  created_at     DateTime      @default(now())
+  id            String       @id @default(uuid())
+  invoiceId     String       @map("invoice_id")
+  paymentMethod String       @map("payment_method")
+  amount        Float
+  reference     String?
+  createdAt     DateTime     @default(now()) @map("created_at")
 
-  invoice        SalesInvoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  invoice       SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@map("payments")
 }
 
 model HeldBill {
-  id             String   @id @default(uuid())
-  cashier_id     String
-  cart_items     Json
-  reserved_stock Json?
-  created_at     DateTime @default(now())
-  expires_at     DateTime
+  id            String   @id @default(uuid())
+  cashierId     String   @map("cashier_id")
+  cartItems     Json     @map("cart_items")
+  reservedStock Json?    @map("reserved_stock")
+  createdAt     DateTime @default(now()) @map("created_at")
+  expiresAt     DateTime @map("expires_at")
 
   @@map("held_bills")
 }
 
 model Stock {
-  id           String   @id @default(uuid())
-  tenant_id    String
-  warehouse_id String
-  product_id   String
-  quantity     Float    @default(0)
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  warehouseId String   @map("warehouse_id")
+  productId   String   @map("product_id")
+  quantity    Float    @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  @@unique([warehouse_id, product_id])
+  @@unique([warehouseId, productId])
   @@map("stocks")
 }
 
 model StockMovement {
-  id           String   @id @default(uuid())
-  tenant_id    String
-  warehouse_id String
-  product_id   String
-  type         String
-  quantity     Float
-  reference_id String?
-  created_at   DateTime @default(now())
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  warehouseId String   @map("warehouse_id")
+  productId   String   @map("product_id")
+  type        String
+  quantity    Float
+  referenceId String?  @map("reference_id")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("stock_movements")
+}
+
+model Product {
+  id                  String   @id @default(uuid()) @map("product_id")
+  tenantId            String   @map("tenant_id")
+  name                String   @map("product_name")
+  description         String?  @map("product_description")
+  sku                 String   @map("sku")
+  barcode             String?  @map("barcode")
+  categoryId          String   @map("category_id")
+  brandId             String?  @map("brand_id")
+  unitId              String?  @map("unit_id")
+  purchasePrice       Decimal? @db.Decimal(10, 2) @map("purchase_price")
+  sellingPrice        Decimal  @db.Decimal(10, 2) @map("selling_price")
+  minimumSellingPrice Decimal? @db.Decimal(10, 2) @map("minimum_selling_price")
+  markupPercentage    Decimal? @db.Decimal(5, 2) @map("markup_percentage")
+  taxRate             Decimal? @db.Decimal(5, 2) @map("tax_rate")
+  taxCategory         String   @map("tax_category")
+  minimumStockLevel   Decimal? @db.Decimal(10, 2) @map("minimum_stock_level")
+  maximumStockLevel   Decimal? @db.Decimal(10, 2) @map("maximum_stock_level")
+  reorderQuantity     Decimal? @db.Decimal(10, 2) @map("reorder_quantity")
+  warrantyMonths      Int?     @map("warranty_months")
+  hasVariants         Boolean  @default(false) @map("has_variants")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdBy           String?  @map("created_by")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, sku])
+  @@unique([tenantId, barcode])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, name])
+  @@map("products")
 }

@@ -20,6 +20,9 @@ export class InvoicesService {
 
   // POST /sales/invoices
   async create(dto: CreateInvoiceDto) {
+
+    // 0. Minimum selling price check 👈 add කරන්න
+  await this.validateMinimumSellingPrice(dto.items);
     // 1. VAT calculate කරනවා
     let subtotal = 0;
     let vat_total = 0;
@@ -101,6 +104,7 @@ if (hasCashOnly) {
           data: calculatedItems.map((item) => ({
             ...item,
             invoice_id: invoice.id,
+            tax_category: item.tax_category as any,
           })),
         });
 
@@ -122,7 +126,7 @@ if (hasCashOnly) {
         await tx.payment.createMany({
           data: dto.payments.map((p) => ({
             invoice_id: invoice.id,
-            payment_method: p.payment_method,
+            payment_method: p.payment_method as any,
             amount: p.amount,
             reference: p.reference,
           })),
@@ -163,7 +167,7 @@ if (hasCashOnly) {
       where: {
         branch_id: filters.branch_id,
         cashier_id: filters.cashier_id,
-        status: filters.status,
+        status: filters.status as any,
         created_at: filters.date
           ? {
               gte: new Date(filters.date),
@@ -188,5 +192,33 @@ if (hasCashOnly) {
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
     return invoice;
+  }
+  private async validateMinimumSellingPrice(items: any[]): Promise<void> {
+    for (const item of items) {
+      const product = await this.prisma.product.findUnique({
+        where: { id: item.product_id },
+        select: {
+          name: true,
+          minimumSellingPrice: true,
+        },
+      });
+
+      if (!product) {
+        throw new BadRequestException(
+          `Product ${item.product_id} not found`,
+        );
+      }
+
+      if (
+        product.minimumSellingPrice &&
+        item.unit_price < Number(product.minimumSellingPrice)
+      ) {
+        throw new BadRequestException(
+          `Product "${product.name}" minimum selling price is ` +
+          `LKR ${product.minimumSellingPrice}. ` +
+          `Cannot sell at LKR ${item.unit_price}.`,
+        );
+      }
+    }
   }
 }
