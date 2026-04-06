@@ -11,6 +11,7 @@ import { StockModule } from './stock/stock.module';
 import { AuthModule } from './auth/auth.module';
 import { RedisModule } from './cache/redis.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { SalesModule } from './sales/sales.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { InventoryModule } from './inventory/inventory.module';
     RedisModule,
     AuthModule,
     InventoryModule,
+    SalesModule,
   ],
   controllers: [AppController],
   providers: [
