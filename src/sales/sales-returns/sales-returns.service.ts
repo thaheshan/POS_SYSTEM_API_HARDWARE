@@ -19,6 +19,8 @@ import {
   SalesReturnNotFoundException,
 } from './exceptions/sales-return.exceptions';
 import { InvoiceItem } from './interfaces/sales-return.interfaces';
+import { RejectSalesReturnDto } from './dto/reject-sales-return.dto';
+import { GetSalesReturnsFilterDto } from './dto/get-sales-returns-filter.dto';
 
 type SalesReturnWithItems = Prisma.SalesReturnGetPayload<{
   include: { items: true };
@@ -39,14 +41,45 @@ export class SalesReturnsService {
         where: { id: dto.invoiceId },
         include: { items: true },
       });
-
       if (!invoice) {
         this.logger.warn(`Invoice not found: ${dto.invoiceId}`);
         throw new InvoiceNotFoundException(dto.invoiceId);
       }
-      this.validateReturnQuantities(dto.items, invoice.items as InvoiceItem[]);
+      const itemsToReturn =
+        dto.items?.length > 0
+          ? dto.items.map((reqItem) => {
+              const dbItem = invoice.items.find(
+                (i) => i.id === reqItem.invoiceItemId,
+              );
+              if (!dbItem)
+                throw new InvoiceItemNotFoundException(reqItem.invoiceItemId);
 
-      const retNumber = this.generateDocumentNumber('RET');
+              // STRICT MAPPING: Force all master data from the database!
+              return {
+                invoiceItemId: reqItem.invoiceItemId,
+                productId: dbItem.productId,
+                variantId: dbItem.variantId ?? undefined,
+                warehouseId: dbItem.warehouseId,
+                quantity: Number(reqItem.quantity),
+                condition: reqItem.condition,
+                unitPrice: Number(dbItem.unitPrice),
+                lineTotal: Number(dbItem.unitPrice) * reqItem.quantity,
+              };
+            })
+          : invoice.items.map((item) => ({
+              invoiceItemId: item.id,
+              productId: item.productId,
+              variantId: item.variantId ?? undefined,
+              warehouseId: item.warehouseId,
+              quantity: Number(item.quantity),
+              condition: ReturnCondition.GOOD,
+              unitPrice: Number(item.unitPrice),
+              lineTotal: Number(item.lineTotal),
+            }));
+      this.validateReturnQuantities(itemsToReturn, invoice.items);
+      const retNumber = await this.generateReturnNumber(tx, dto.tenantId);
+
+      dto.items = itemsToReturn;
       const mappedData = this.mapReturnData(dto, retNumber, userId);
 
       const newReturn = await tx.salesReturn.create({
@@ -62,15 +95,137 @@ export class SalesReturnsService {
   async approveReturn(returnId: string, userId: string) {
     this.logger.log(`Approving Return ID: ${returnId} by User: ${userId}`);
 
+    const existingReturn = await this.prisma.salesReturn.findUnique({
+      where: { id: returnId },
+    });
+
+    if (
+      existingReturn?.refundMethod === RefundMethod.CREDIT_NOTE &&
+      !existingReturn.customerId
+    ) {
+      throw new InvalidReturnStatusException(existingReturn.status);
+    }
+
     return await this.prisma.$transaction(async (tx) => {
       const salesReturn = await this.getReturnWithItems(tx, returnId);
       this.validateReturnIsPending(salesReturn);
 
       await this.processReturnItems(tx, salesReturn, userId);
       await this.processFinancials(tx, salesReturn);
+
+      const approvedReturn = await this.markReturnAsApproved(
+        tx,
+        returnId,
+        userId,
+      );
+
       await this.updateInvoiceStatus(tx, salesReturn.invoiceId);
-      return await this.markReturnAsApproved(tx, returnId, userId);
+      return approvedReturn;
     });
+  }
+
+  async rejectReturn(
+    returnId: string,
+    userId: string,
+    rejectDto: RejectSalesReturnDto,
+  ) {
+    this.logger.log(`Rejecting Return ID: ${returnId} by User: ${userId}`);
+
+    const existingReturn = await this.prisma.salesReturn.findUnique({
+      where: { id: returnId },
+    });
+
+    if (!existingReturn) {
+      this.logger.warn(`Sales return not found: ${returnId}`);
+      throw new SalesReturnNotFoundException(returnId);
+    }
+
+    if (existingReturn.status !== ReturnStatus.PENDING) {
+      this.logger.warn(
+        `Invalid return status for rejection: ${existingReturn.status}`,
+      );
+      throw new InvalidReturnStatusException(existingReturn.status);
+    }
+
+    let updatedReason = existingReturn.reason;
+    if (rejectDto.rejectReason) {
+      updatedReason = existingReturn.reason
+        ? `${existingReturn.reason} | Rejected Reason: ${rejectDto.rejectReason}`
+        : `Rejected Reason: ${rejectDto.rejectReason}`;
+    }
+
+    const rejectedReturn = await this.prisma.salesReturn.update({
+      where: { id: returnId },
+      data: {
+        status: ReturnStatus.REJECTED,
+        reason: updatedReason,
+        approvedBy: userId,
+      },
+    });
+    this.logger.log(`Return ID: ${returnId} rejected successfully`);
+    return rejectedReturn;
+  }
+
+  // Get Returns with filtering and pagination (not shown here for brevity)
+  async getAllReturns(tenantId: string, filterDto: GetSalesReturnsFilterDto) {
+    const page = Number(filterDto.page || 1);
+    const limit = Number(filterDto.limit || 10);
+    const skip = (page - 1) * limit;
+    const { status, branchId, search } = filterDto;
+
+    const whereClause: Prisma.SalesReturnWhereInput = {
+      tenantId,
+      ...(status && { status }),
+      ...(branchId && { branchId }),
+      ...(search && {
+        retNumber: { contains: search, mode: 'insensitive' },
+      }),
+    };
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.salesReturn.findMany({
+        where: whereClause,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' }, // Newest first
+        include: {
+          customer: { select: { name: true, phone: true } }, // Useful for dashboard tables
+        },
+      }),
+      this.prisma.salesReturn.count({ where: whereClause }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async findOneReturn(returnId: string, tenantId: string) {
+    const salesReturn = await this.prisma.salesReturn.findFirst({
+      where: { id: returnId, tenantId },
+      include: {
+        items: {
+          include: {
+            product: { select: { name: true, sku: true } },
+          },
+        },
+        customer: true,
+        creditNotes: true,
+        creator: { select: { first_name: true, last_name: true } },
+        approver: { select: { first_name: true, last_name: true } },
+      },
+    });
+
+    if (!salesReturn) {
+      throw new SalesReturnNotFoundException(returnId);
+    }
+
+    return salesReturn;
   }
 
   // ======== Private Helper Methods ========
@@ -96,48 +251,66 @@ export class SalesReturnsService {
       }
     }
   }
-
-  private calculateReturnTotals(
-    items: { lineTotal: string; taxAmount: string }[],
-  ) {
-    const subtotal = items.reduce(
-      (sum, item) => sum + Number(item.lineTotal),
-      0,
-    );
-    const taxAmount = items.reduce(
-      (sum, item) => sum + Number(item.taxAmount || 0),
-      0,
-    );
-    const totalAmount = subtotal + taxAmount;
-
-    return { subtotal, taxAmount, totalAmount };
-  }
-
-  private generateDocumentNumber(prefix: string): string {
+  private async generateReturnNumber(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+  ): Promise<string> {
     const year = new Date().getFullYear();
-    const uniqueSuffix = Date.now().toString().slice(-5);
-    return `${prefix}-${year}-${uniqueSuffix}`;
+    const searchPrefix = `RET-${year}-`;
+
+    const lastReturn = await tx.salesReturn.findFirst({
+      where: { tenantId, retNumber: { startsWith: searchPrefix } },
+      orderBy: { retNumber: 'desc' },
+    });
+
+    let nextNumber = 1;
+    if (lastReturn) {
+      const parsedNumber = parseInt(
+        lastReturn.retNumber.replace(searchPrefix, ''),
+        10,
+      );
+      if (!isNaN(parsedNumber)) nextNumber = parsedNumber + 1;
+    }
+    return `${searchPrefix}${nextNumber.toString().padStart(5, '0')}`;
   }
 
+  private async generateCreditNoteNumber(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+  ): Promise<string> {
+    const year = new Date().getFullYear();
+    const searchPrefix = `CN-${year}-`;
+
+    const lastNote = await tx.creditNote.findFirst({
+      where: { tenantId, creditNoteNumber: { startsWith: searchPrefix } },
+      orderBy: { creditNoteNumber: 'desc' },
+    });
+
+    let nextNumber = 1;
+    if (lastNote) {
+      const parsedNumber = parseInt(
+        lastNote.creditNoteNumber.replace(searchPrefix, ''),
+        10,
+      );
+      if (!isNaN(parsedNumber)) nextNumber = parsedNumber + 1;
+    }
+    return `${searchPrefix}${nextNumber.toString().padStart(5, '0')}`;
+  }
   private mapReturnData(
     dto: CreateSalesReturnDto,
     retNumber: string,
     userId: string,
-  ) {
+  ): Prisma.SalesReturnUncheckedCreateInput {
     return {
       retNumber,
       tenantId: dto.tenantId,
       branchId: dto.branchId,
       invoiceId: dto.invoiceId,
       customerId: dto.customerId,
-      returnDate: new Date(),
-      returnType: dto.returnType,
-      subtotal: dto.subtotal,
-      taxAmount: dto.taxAmount,
-      totalAmount: dto.totalAmount,
+      totalAmount: new Prisma.Decimal(dto.totalAmount),
       refundMethod: dto.refundMethod,
-      returnReason: dto.returnReason,
-      processedBy: userId,
+      reason: dto.returnReason,
+      createdBy: userId,
       status: ReturnStatus.PENDING,
 
       items: {
@@ -146,10 +319,10 @@ export class SalesReturnsService {
           productId: item.productId,
           variantId: item.variantId,
           warehouseId: item.warehouseId,
-          quantity: item.quantity,
+          quantity: new Prisma.Decimal(item.quantity),
           condition: item.condition,
-          unitPrice: item.unitPrice,
-          lineTotal: item.lineTotal,
+          unitPrice: new Prisma.Decimal(item.unitPrice),
+          lineTotal: new Prisma.Decimal(item.lineTotal),
         })),
       },
     };
@@ -218,9 +391,19 @@ export class SalesReturnsService {
           'CASH refunds for CREDIT sales must be approved by an Admin',
         );
       } else {
-        // Default behavior for credit sales: force account deduction
         await this.updateCustomerBalance(tx, salesReturn);
-        return; // Stop here so we don't issue credit notes
+
+        if (salesReturn.refundMethod !== RefundMethod.ACCOUNT_DEDUCTION) {
+          await tx.salesReturn.update({
+            where: { id: salesReturn.id },
+            data: { refundMethod: RefundMethod.ACCOUNT_DEDUCTION },
+          });
+          this.logger.log(
+            `Changed refund method to ACCOUNT_DEDUCTION for Return ${salesReturn.id}`,
+          );
+        }
+
+        return;
       }
     }
 
@@ -233,6 +416,15 @@ export class SalesReturnsService {
       });
     } else if (salesReturn.refundMethod === RefundMethod.ACCOUNT_DEDUCTION) {
       await this.updateCustomerBalance(tx, salesReturn);
+    } else if (salesReturn.refundMethod === RefundMethod.EXCHANGE) {
+      await this.issueCreditNote(tx, salesReturn);
+      this.logger.log(
+        `Exchange processed: Credit Note issued for Return ${salesReturn.id}`,
+      );
+    } else if (salesReturn.refundMethod === RefundMethod.CASH) {
+      this.logger.log(
+        `CASH refund of ${salesReturn.totalAmount.toString()} approved. Please dispense cash from till.`,
+      );
     }
   }
 
@@ -240,10 +432,52 @@ export class SalesReturnsService {
     tx: Prisma.TransactionClient,
     invoiceId: string,
   ) {
-    await tx.salesInvoice.update({
+    const invoice = await tx.salesInvoice.findUnique({
       where: { id: invoiceId },
-      data: { status: InvoiceStatus.RETURNED },
+      include: { items: true },
     });
+
+    if (!invoice) {
+      throw new InvoiceNotFoundException(invoiceId);
+    }
+
+    const totalPurchasedQty = invoice.items.reduce(
+      (sum, item) => sum + Number(item.quantity),
+      0,
+    );
+
+    const allReturns = await tx.salesReturn.findMany({
+      where: {
+        invoiceId: invoiceId,
+        status: { in: [ReturnStatus.APPROVED] },
+      },
+      include: { items: true },
+    });
+
+    const totalReturnedQty = allReturns.reduce((sum, ret) => {
+      return (
+        sum +
+        ret.items.reduce((itemSum, item) => itemSum + Number(item.quantity), 0)
+      );
+    }, 0);
+
+    if (totalReturnedQty >= totalPurchasedQty) {
+      await tx.salesInvoice.update({
+        where: { id: invoiceId },
+        data: { status: InvoiceStatus.RETURNED },
+      });
+      this.logger.log(
+        `Invoice ${invoiceId} fully returned. Status updated to RETURNED.`,
+      );
+    } else {
+      await tx.salesInvoice.update({
+        where: { id: invoiceId },
+        data: { status: InvoiceStatus.COMPLETED },
+      });
+      this.logger.log(
+        `Invoice ${invoiceId} partially returned. Status kept as COMPLETED.`,
+      );
+    }
   }
 
   private async markReturnAsApproved(
@@ -309,7 +543,10 @@ export class SalesReturnsService {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 90);
 
-    const creditNoteNumber = this.generateDocumentNumber('CN');
+    const creditNoteNumber = await this.generateCreditNoteNumber(
+      tx,
+      salesReturn.tenantId,
+    );
 
     const note = await tx.creditNote.create({
       data: {
