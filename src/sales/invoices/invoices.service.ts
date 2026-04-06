@@ -18,12 +18,11 @@ export class InvoicesService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // POST /sales/invoices
   async create(dto: CreateInvoiceDto) {
+    // 0. Minimum selling price check
+    await this.validateMinimumSellingPrice(dto.items);
 
-    // 0. Minimum selling price check 👈 add කරන්න
-  await this.validateMinimumSellingPrice(dto.items);
-    // 1. VAT calculate කරනවා
+    // 1. VAT calculate
     let subtotal = 0;
     let vat_total = 0;
 
@@ -53,26 +52,32 @@ export class InvoicesService {
     const discount_total = dto.discount_total || 0;
     const grand_total = subtotal + vat_total - discount_total;
 
-    // 2. Payment validation — split payment sum check
-    // 2. Payment validation
-const payment_total = dto.payments.reduce((sum, p) => sum + p.amount, 0);
-const hasCashOnly = dto.payments.every((p) => p.payment_method === 'cash');
+    // 0.1 Credit sale validation
+    if (dto.customer_id) {
+      await this.validateCreditSale(
+        dto.customer_id,
+        grand_total,
+        dto.payments,
+      );
+    }
 
-if (hasCashOnly) {
-  // Cash sale — overpayment allowed
-  if (payment_total < grand_total - 0.01) {
-    throw new BadRequestException(
-      `Cash amount (${payment_total}) is less than grand total (${grand_total})`,
-    );
-  }
-} else {
-  // Card / Split — exact match required
-  if (Math.abs(payment_total - grand_total) > 0.01) {
-    throw new BadRequestException(
-      `Payment total (${payment_total}) must equal grand total (${grand_total})`,
-    );
-  }
-}
+    // 2. Payment validation
+    const payment_total = dto.payments.reduce((sum, p) => sum + p.amount, 0);
+    const hasCashOnly = dto.payments.every((p) => p.payment_method === 'cash');
+
+    if (hasCashOnly) {
+      if (payment_total < grand_total - 0.01) {
+        throw new BadRequestException(
+          `Cash amount (${payment_total}) is less than grand total (${grand_total})`,
+        );
+      }
+    } else {
+      if (Math.abs(payment_total - grand_total) > 0.01) {
+        throw new BadRequestException(
+          `Payment total (${payment_total}) must equal grand total (${grand_total})`,
+        );
+      }
+    }
 
     // 3. Invoice number generate
     const invoice_number = await generateInvoiceNumber(
@@ -81,20 +86,19 @@ if (hasCashOnly) {
     );
 
     try {
-      // 4. Transaction — atomic operation
       return await this.prisma.$transaction(async (tx) => {
         // 4.1 Invoice create
         const invoice = await tx.salesInvoice.create({
           data: {
-            invoice_number,
-            tenant_id: dto.tenant_id,
-            branch_id: dto.branch_id,
-            cashier_id: dto.cashier_id,
-            customer_id: dto.customer_id,
+            invoiceNumber: invoice_number,
+            tenantId: dto.tenant_id,
+            branchId: dto.branch_id,
+            cashierId: dto.cashier_id,
+            customerId: dto.customer_id,
             subtotal,
-            discount_total,
-            vat_total,
-            grand_total,
+            discountTotal: discount_total,
+            vatTotal: vat_total,
+            grandTotal: grand_total,
             status: 'completed',
           },
         });
@@ -102,9 +106,15 @@ if (hasCashOnly) {
         // 4.2 Invoice items create
         await tx.salesInvoiceItem.createMany({
           data: calculatedItems.map((item) => ({
-            ...item,
-            invoice_id: invoice.id,
-            tax_category: item.tax_category as any,
+            invoiceId: invoice.id,
+            productId: item.product_id,
+            quantity: item.quantity,
+            unitPrice: item.unit_price,
+            costPrice: item.cost_price,
+            lineTotal: item.line_total,
+            lineTax: item.line_tax,
+            profit: item.profit,
+            taxCategory: item.tax_category,
           })),
         });
 
@@ -125,8 +135,8 @@ if (hasCashOnly) {
         // 4.4 Payments create
         await tx.payment.createMany({
           data: dto.payments.map((p) => ({
-            invoice_id: invoice.id,
-            payment_method: p.payment_method as any,
+            invoiceId: invoice.id,
+            paymentMethod: p.payment_method,
             amount: p.amount,
             reference: p.reference,
           })),
@@ -156,7 +166,6 @@ if (hasCashOnly) {
     }
   }
 
-  // GET /sales/invoices
   async findAll(filters: {
     date?: string;
     branch_id?: string;
@@ -165,10 +174,10 @@ if (hasCashOnly) {
   }) {
     return this.prisma.salesInvoice.findMany({
       where: {
-        branch_id: filters.branch_id,
-        cashier_id: filters.cashier_id,
-        status: filters.status as any,
-        created_at: filters.date
+        branchId: filters.branch_id,
+        cashierId: filters.cashier_id,
+        status: filters.status,
+        createdAt: filters.date
           ? {
               gte: new Date(filters.date),
               lte: new Date(
@@ -180,11 +189,10 @@ if (hasCashOnly) {
           : undefined,
       },
       include: { items: true, payments: true },
-      orderBy: { created_at: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  // GET /sales/invoices/:id
   async findOne(id: string) {
     const invoice = await this.prisma.salesInvoice.findUnique({
       where: { id },
@@ -193,6 +201,7 @@ if (hasCashOnly) {
     if (!invoice) throw new NotFoundException('Invoice not found');
     return invoice;
   }
+
   private async validateMinimumSellingPrice(items: any[]): Promise<void> {
     for (const item of items) {
       const product = await this.prisma.product.findUnique({
@@ -219,6 +228,50 @@ if (hasCashOnly) {
           `Cannot sell at LKR ${item.unit_price}.`,
         );
       }
+    }
+  }
+
+  private async validateCreditSale(
+    customerId: string,
+    invoiceTotal: number,
+    payments: any[],
+  ): Promise<void> {
+    const hasCreditPayment = payments.some(
+      (p) => p.payment_method === 'credit',
+    );
+
+    if (!hasCreditPayment) return;
+
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: {
+        name: true,
+        creditLimit: true,
+        outstandingBalance: true,
+      },
+    });
+
+    if (!customer) {
+      throw new BadRequestException(
+        `Customer ${customerId} not found`,
+      );
+    }
+
+    if (Number(customer.creditLimit) <= 0) {
+      throw new BadRequestException(
+        `Customer "${customer.name}" is not eligible for credit sales`,
+      );
+    }
+
+    const newBalance = Number(customer.outstandingBalance) + invoiceTotal;
+
+    if (newBalance > Number(customer.creditLimit)) {
+      throw new BadRequestException(
+        `Credit limit exceeded for "${customer.name}". ` +
+        `Limit: LKR ${customer.creditLimit}, ` +
+        `Outstanding: LKR ${customer.outstandingBalance}, ` +
+        `Invoice: LKR ${invoiceTotal}`,
+      );
     }
   }
 }

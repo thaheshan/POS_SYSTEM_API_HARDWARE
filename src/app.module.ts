@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
 import { SalesModule } from './sales/sales.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { SalesModule } from './sales/sales.module';
     PrismaModule,
     SystemModule,
     AuthModule,
+    ScheduleModule.forRoot(),
     SalesModule,
   ],
   controllers: [AppController],

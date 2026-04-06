@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateHeldBillDto } from './dto/create-held-bill.dto'; 
+import { CreateHeldBillDto } from './dto/create-held-bill.dto';
 
 @Injectable()
 export class HeldBillsService {
@@ -13,17 +13,16 @@ export class HeldBillsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // POST /sales/held-bills
   async create(dto: CreateHeldBillDto) {
-    const expires_at = new Date(Date.now() + 30 * 60 * 1000); 
+    const expires_at = new Date(Date.now() + 30 * 60 * 1000);
 
     try {
       return await this.prisma.heldBill.create({
         data: {
-          cashier_id: dto.cashier_id,
-          cart_items: dto.cart_items,
-          reserved_stock: dto.reserved_stock || {},
-          expires_at,
+          cashierId: dto.cashier_id,
+          cartItems: dto.cart_items,
+          reservedStock: dto.reserved_stock || {},
+          expiresAt: expires_at,
         },
       });
     } catch (error) {
@@ -32,18 +31,16 @@ export class HeldBillsService {
     }
   }
 
-  // GET /sales/held-bills
   async findByCashier(cashier_id: string) {
     return this.prisma.heldBill.findMany({
       where: {
-        cashier_id,
-        expires_at: { gt: new Date() },
+        cashierId: cashier_id,
+        expiresAt: { gt: new Date() },
       },
-      orderBy: { created_at: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  // DELETE /sales/held-bills/:id
   async remove(id: string) {
     const bill = await this.prisma.heldBill.findUnique({ where: { id } });
     if (!bill) throw new NotFoundException('Held bill not found');

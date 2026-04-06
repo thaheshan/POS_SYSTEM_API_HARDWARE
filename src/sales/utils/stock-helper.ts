@@ -1,5 +1,4 @@
 import { BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 
 export interface StockItem {
   product_id: string;
@@ -9,16 +8,16 @@ export interface StockItem {
 }
 
 export async function deductStockPerItem(
-  tx: Prisma.TransactionClient,
+  tx: any,
   items: StockItem[],
   invoice_id: string,
 ): Promise<void> {
   for (const item of items) {
     const stock = await tx.stock.findUnique({
       where: {
-        warehouse_id_product_id: {
-          warehouse_id: item.warehouse_id,
-          product_id: item.product_id,
+        warehouseId_productId: {
+          warehouseId: item.warehouse_id,
+          productId: item.product_id,
         },
       },
     });
@@ -31,9 +30,9 @@ export async function deductStockPerItem(
 
     await tx.stock.update({
       where: {
-        warehouse_id_product_id: {
-          warehouse_id: item.warehouse_id,
-          product_id: item.product_id,
+        warehouseId_productId: {
+          warehouseId: item.warehouse_id,
+          productId: item.product_id,
         },
       },
       data: { quantity: { decrement: item.quantity } },
@@ -41,12 +40,12 @@ export async function deductStockPerItem(
 
     await tx.stockMovement.create({
       data: {
-        tenant_id: item.tenant_id,
-        warehouse_id: item.warehouse_id,
-        product_id: item.product_id,
+        tenantId: item.tenant_id,
+        warehouseId: item.warehouse_id,
+        productId: item.product_id,
         type: 'sale_out',
         quantity: item.quantity,
-        reference_id: invoice_id,
+        referenceId: invoice_id,
       },
     });
   }

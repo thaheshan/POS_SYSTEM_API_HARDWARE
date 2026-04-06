@@ -6,19 +6,18 @@ export async function generateInvoiceNumber(
 ): Promise<string> {
   const year = new Date().getFullYear();
 
-
   const last = await prisma.salesInvoice.findFirst({
     where: {
-      invoice_number: {
+      invoiceNumber: {
         startsWith: `INV-${branch_code}-${year}-`,
       },
     },
-    orderBy: { invoice_number: 'desc' },
+    orderBy: { invoiceNumber: 'desc' },
   });
 
   let sequence = 1;
   if (last) {
-    const parts = last.invoice_number.split('-');
+    const parts = last.invoiceNumber.split('-');
     sequence = parseInt(parts[parts.length - 1]) + 1;
   }
 

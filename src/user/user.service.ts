@@ -9,14 +9,14 @@ export class UserService {
 
   async findById(userId: string): Promise<AuthUser | null> {
     return this.prisma.db.user.findUnique({
-      where: { user_id: userId },
+      where: { userId },
       select: {
-        user_id: true,
+        userId: true,
         email: true,
         role: true,
-        is_active: true,
-        is_verified: true,
-        tenant_id: true,
+        isActive: true,
+        isVerified: true,
+        tenantId: true,
       },
     }) as Promise<AuthUser | null>;
   }
@@ -25,17 +25,17 @@ export class UserService {
     return this.prisma.db.user.findUnique({
       where: { email },
       select: {
-        user_id: true,
+        userId: true,
         email: true,
-        password_hash: true,
-        first_name: true,
-        last_name: true,
+        passwordHash: true,
+        firstName: true,
+        lastName: true,
         role: true,
-        is_active: true,
-        is_verified: true,
-        tenant_id: true,
-        failed_login_attempts: true,
-        account_locked_until: true,
+        isActive: true,
+        isVerified: true,
+        tenantId: true,
+        failedLoginAttempts: true,
+        accountLockedUntil: true,
       },
     }) as Promise<UserRecord | null>;
   }
@@ -43,7 +43,7 @@ export class UserService {
   async incrementFailedLoginAttempts(email: string): Promise<void> {
     await this.prisma.db.user.update({
       where: { email },
-      data: { failed_login_attempts: { increment: 1 } },
+      data: { failedLoginAttempts: { increment: 1 } },
     });
   }
 
@@ -51,9 +51,9 @@ export class UserService {
     await this.prisma.db.user.update({
       where: { email },
       data: {
-        failed_login_attempts: 0,
-        account_locked_until: null,
-        last_login: new Date(),
+        failedLoginAttempts: 0,
+        accountLockedUntil: null,
+        lastLogin: new Date(),
       },
     });
   }
