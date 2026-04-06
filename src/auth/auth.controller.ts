@@ -22,4 +22,13 @@ export class AuthController {
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
+
+  @Post('complete-login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Complete login after 2FA' })
+  @ApiResponse({ status: 200, description: 'Login completed and tokens issued' })
+  async completeLogin(@Body() body: { temp_token: string; otp?: string; token?: string }) {
+    return this.authService.completeLogin(body.temp_token, body.otp, body.token);
+  }
 }
+

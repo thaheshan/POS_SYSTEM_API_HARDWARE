@@ -17,6 +17,8 @@ model User {
   is_active             Boolean   @default(true)
   is_verified           Boolean   @default(false)
   two_factor_enabled    Boolean   @default(false)
+  totp_secret           String?
+  phone_number          String?
   last_login            DateTime?
   failed_login_attempts Int       @default(0)
   account_locked_until  DateTime?
