@@ -105,6 +105,7 @@ model Payment {
 model HeldBill {
   id            String   @id @default(uuid())
   cashierId     String   @map("cashier_id")
+  warehouseId   String?  @map("warehouse_id")
   cartItems     Json     @map("cart_items")
   reservedStock Json?    @map("reserved_stock")
   createdAt     DateTime @default(now()) @map("created_at")
@@ -119,6 +120,8 @@ model Stock {
   warehouseId String   @map("warehouse_id")
   productId   String   @map("product_id")
   quantity    Float    @default(0)
+  reservedQuantity  Float    @default(0) @map("reserved_quantity") 
+  availableQuantity Float?   @map("available_quantity")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

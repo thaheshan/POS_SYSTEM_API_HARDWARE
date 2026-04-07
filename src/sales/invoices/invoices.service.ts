@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { generateInvoiceNumber } from '../utils/invoice-number';
 import { deductStockPerItem } from '../utils/stock-helper';
+import { SmsService } from '../../common/sms/sms.service';
 
 const VAT_RATE = 18;
 
@@ -16,7 +17,10 @@ const VAT_RATE = 18;
 export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly smsService: SmsService,
+  ) {}
 
   async create(dto: CreateInvoiceDto) {
     // 0. Minimum selling price check
@@ -86,7 +90,7 @@ export class InvoicesService {
     );
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         // 4.1 Invoice create
         const invoice = await tx.salesInvoice.create({
           data: {
@@ -142,7 +146,22 @@ export class InvoicesService {
           })),
         });
 
-        // 4.5 Cash change calculate
+        // 4.5 Customer balance update
+        const hasCreditPayment = dto.payments.some(
+          (p) => p.payment_method === 'credit',
+        );
+
+        if (dto.customer_id && hasCreditPayment) {
+          await tx.customer.update({
+            where: { id: dto.customer_id },
+            data: {
+              outstandingBalance: { increment: grand_total },
+              totalPurchases: { increment: grand_total },
+            },
+          });
+        }
+
+        // 4.6 Cash change calculate
         const cashPayment = dto.payments.find(
           (p) => p.payment_method === 'cash',
         );
@@ -159,6 +178,13 @@ export class InvoicesService {
           change_amount: change_amount > 0 ? change_amount : 0,
         };
       });
+
+      // Low-stock check — after transaction
+      if (dto.warehouse_id) {
+        await this.checkLowStock(dto.items, dto.warehouse_id);
+      }
+
+      return result;
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       this.logger.error('Failed to create invoice', error);
@@ -272,6 +298,41 @@ export class InvoicesService {
         `Outstanding: LKR ${customer.outstandingBalance}, ` +
         `Invoice: LKR ${invoiceTotal}`,
       );
+    }
+  }
+
+  private async checkLowStock(
+    items: any[],
+    warehouse_id: string,
+  ): Promise<void> {
+    for (const item of items) {
+      const stock = await this.prisma.stock.findUnique({
+        where: {
+          warehouseId_productId: {
+            warehouseId: warehouse_id,
+            productId: item.product_id,
+          },
+        },
+      });
+
+      if (!stock) continue;
+
+      const product = await this.prisma.product.findUnique({
+        where: { id: item.product_id },
+        select: { minimumStockLevel: true },
+      });
+
+      if (!product?.minimumStockLevel) continue;
+
+      // Stock ≤ minimum , send SMS
+      if (stock.quantity <= Number(product.minimumStockLevel)) {
+        await this.smsService.sendLowStockAlert(
+          item.product_id,
+          Number(stock.quantity),
+          Number(product.minimumStockLevel),
+          warehouse_id,
+        );
+      }
     }
   }
 }

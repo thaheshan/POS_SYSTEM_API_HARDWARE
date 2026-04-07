@@ -6,7 +6,12 @@ export class CreateHeldBillDto {
   @IsString()
   cashier_id: string;
 
-  @ApiProperty({ example: [{ product_id: 'p1', quantity: 2, unit_price: 100 }] })
+  @ApiPropertyOptional({ example: 'warehouse-uuid-001' })
+  @IsOptional()
+  @IsString()
+  warehouse_id?: string; 
+
+  @ApiProperty()
   @IsArray()
   cart_items: any[];
 
