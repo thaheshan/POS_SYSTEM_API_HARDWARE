@@ -45,3 +45,10 @@ export class InvalidReturnStatusException extends BadRequestException {
     );
   }
 }
+export class StockRecordNotFoundException extends NotFoundException {
+  constructor(productId: string, warehouseId: string) {
+    super(
+      `Critical: Stock ledger record not found for product ${productId} in warehouse ${warehouseId}.`,
+    );
+  }
+}

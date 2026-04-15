@@ -17,6 +17,7 @@ import {
   InvoiceNotFoundException,
   ReturnQuantityExceededException,
   SalesReturnNotFoundException,
+  StockRecordNotFoundException,
 } from './exceptions/sales-return.exceptions';
 import { InvoiceItem } from './interfaces/sales-return.interfaces';
 import { RejectSalesReturnDto } from './dto/reject-sales-return.dto';
@@ -33,71 +34,116 @@ export class SalesReturnsService {
 
   // ======== Public Methods ========
   // Create return request
-  async createReturnRequest(dto: CreateSalesReturnDto, userId: string) {
+  async createReturnRequest(
+    dto: CreateSalesReturnDto,
+    userId: string,
+    tenantId: string,
+  ) {
     this.logger.log(`Starting return creation for Invoice: ${dto.invoiceId}`);
 
-    return await this.prisma.$transaction(async (tx) => {
-      const invoice = await tx.salesInvoice.findUnique({
-        where: { id: dto.invoiceId },
-        include: { items: true },
-      });
-      if (!invoice) {
-        this.logger.warn(`Invoice not found: ${dto.invoiceId}`);
-        throw new InvoiceNotFoundException(dto.invoiceId);
-      }
-      const itemsToReturn =
-        dto.items?.length > 0
-          ? dto.items.map((reqItem) => {
-              const dbItem = invoice.items.find(
-                (i) => i.id === reqItem.invoiceItemId,
-              );
-              if (!dbItem)
-                throw new InvoiceItemNotFoundException(reqItem.invoiceItemId);
+    return await this.prisma.$transaction(
+      async (tx) => {
+        const invoice = await tx.salesInvoice.findUnique({
+          where: { id: dto.invoiceId, tenantId: tenantId },
+          include: { items: true },
+        });
+        if (!invoice) {
+          this.logger.warn(`Invoice not found: ${dto.invoiceId}`);
+          throw new InvoiceNotFoundException(dto.invoiceId);
+        }
+        const itemsToReturn =
+          dto.items?.length > 0
+            ? dto.items.map((reqItem) => {
+                const dbItem = invoice.items.find(
+                  (i) => i.id === reqItem.invoiceItemId,
+                );
+                if (!dbItem)
+                  throw new InvoiceItemNotFoundException(reqItem.invoiceItemId);
 
-              // STRICT MAPPING: Force all master data from the database!
-              return {
-                invoiceItemId: reqItem.invoiceItemId,
-                productId: dbItem.productId,
-                variantId: dbItem.variantId ?? undefined,
-                warehouseId: dbItem.warehouseId,
-                quantity: Number(reqItem.quantity),
-                condition: reqItem.condition,
-                unitPrice: Number(dbItem.unitPrice),
-                lineTotal: Number(dbItem.unitPrice) * reqItem.quantity,
-              };
-            })
-          : invoice.items.map((item) => ({
-              invoiceItemId: item.id,
-              productId: item.productId,
-              variantId: item.variantId ?? undefined,
-              warehouseId: item.warehouseId,
-              quantity: Number(item.quantity),
-              condition: ReturnCondition.GOOD,
-              unitPrice: Number(item.unitPrice),
-              lineTotal: Number(item.lineTotal),
-            }));
-      this.validateReturnQuantities(itemsToReturn, invoice.items);
-      const retNumber = await this.generateReturnNumber(tx, dto.tenantId);
+                // STRICT MAPPING: Force all master data from the database!
+                return {
+                  invoiceItemId: reqItem.invoiceItemId,
+                  productId: dbItem.productId,
+                  variantId: dbItem.variantId ?? undefined,
+                  warehouseId: dbItem.warehouseId,
+                  quantity: Number(reqItem.quantity),
+                  condition: reqItem.condition,
+                  unitPrice: Number(dbItem.unitPrice),
+                  lineTotal: Number(dbItem.unitPrice) * reqItem.quantity,
+                };
+              })
+            : invoice.items.map((item) => ({
+                invoiceItemId: item.id,
+                productId: item.productId,
+                variantId: item.variantId ?? undefined,
+                warehouseId: item.warehouseId,
+                quantity: Number(item.quantity),
+                condition: ReturnCondition.GOOD,
+                unitPrice: Number(item.unitPrice),
+                lineTotal: Number(item.lineTotal),
+              }));
 
-      dto.items = itemsToReturn;
-      const mappedData = this.mapReturnData(dto, retNumber, userId);
+        const previousReturns = await tx.salesReturn.findMany({
+          where: {
+            invoiceId: dto.invoiceId,
+            status: { in: [ReturnStatus.PENDING, ReturnStatus.APPROVED] },
+          },
+          include: { items: true },
+        });
 
-      const newReturn = await tx.salesReturn.create({
-        data: mappedData,
-        include: { items: true },
-      });
-      this.logger.log(`Return created successfully with ID: ${newReturn.id}`);
-      return newReturn;
-    });
+        const alreadyReturnedMap = new Map<string, number>();
+        for (const prevReturn of previousReturns) {
+          for (const item of prevReturn.items) {
+            const currentQty = alreadyReturnedMap.get(item.invoiceItemId) || 0;
+            alreadyReturnedMap.set(
+              item.invoiceItemId,
+              currentQty + Number(item.quantity),
+            );
+          }
+        }
+        this.validateReturnQuantities(
+          itemsToReturn,
+          invoice.items,
+          alreadyReturnedMap,
+        );
+
+        const secureTotalAmount = itemsToReturn.reduce(
+          (sum, item) => sum + item.lineTotal,
+          0,
+        );
+        dto.totalAmount = secureTotalAmount;
+        const retNumber = await this.generateReturnNumber(tx, tenantId);
+
+        dto.items = itemsToReturn;
+        const mappedData = this.mapReturnData(dto, retNumber, userId);
+        mappedData.tenantId = tenantId;
+        mappedData.branchId = invoice.branchId;
+
+        const newReturn = await tx.salesReturn.create({
+          data: mappedData,
+          include: { items: true },
+        });
+        this.logger.log(`Return created successfully with ID: ${newReturn.id}`);
+        return newReturn;
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
   }
 
   // Approve return request
-  async approveReturn(returnId: string, userId: string) {
+  async approveReturn(returnId: string, userId: string, tenantId: string) {
     this.logger.log(`Approving Return ID: ${returnId} by User: ${userId}`);
 
     const existingReturn = await this.prisma.salesReturn.findUnique({
-      where: { id: returnId },
+      where: { id: returnId, tenantId: tenantId },
     });
+
+    if (!existingReturn) {
+      this.logger.warn(`Sales return not found or unauthorized: ${returnId}`);
+      throw new SalesReturnNotFoundException(returnId);
+    }
 
     if (
       existingReturn?.refundMethod === RefundMethod.CREDIT_NOTE &&
@@ -106,33 +152,44 @@ export class SalesReturnsService {
       throw new InvalidReturnStatusException(existingReturn.status);
     }
 
-    return await this.prisma.$transaction(async (tx) => {
-      const salesReturn = await this.getReturnWithItems(tx, returnId);
-      this.validateReturnIsPending(salesReturn);
+    return await this.prisma.$transaction(
+      async (tx) => {
+        const salesReturn = await this.getReturnWithItems(
+          tx,
+          returnId,
+          tenantId,
+        );
+        this.validateReturnIsPending(salesReturn);
 
-      await this.processReturnItems(tx, salesReturn, userId);
-      await this.processFinancials(tx, salesReturn);
+        await this.processReturnItems(tx, salesReturn, userId);
+        await this.processFinancials(tx, salesReturn);
 
-      const approvedReturn = await this.markReturnAsApproved(
-        tx,
-        returnId,
-        userId,
-      );
+        const approvedReturn = await this.markReturnAsApproved(
+          tx,
+          returnId,
+          userId,
+          tenantId,
+        );
 
-      await this.updateInvoiceStatus(tx, salesReturn.invoiceId);
-      return approvedReturn;
-    });
+        await this.updateInvoiceStatus(tx, salesReturn.invoiceId);
+        return approvedReturn;
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
   }
 
   async rejectReturn(
     returnId: string,
     userId: string,
     rejectDto: RejectSalesReturnDto,
+    tenantId: string,
   ) {
     this.logger.log(`Rejecting Return ID: ${returnId} by User: ${userId}`);
 
     const existingReturn = await this.prisma.salesReturn.findUnique({
-      where: { id: returnId },
+      where: { id: returnId, tenantId: tenantId },
     });
 
     if (!existingReturn) {
@@ -155,7 +212,7 @@ export class SalesReturnsService {
     }
 
     const rejectedReturn = await this.prisma.salesReturn.update({
-      where: { id: returnId },
+      where: { id: returnId, tenantId: tenantId },
       data: {
         status: ReturnStatus.REJECTED,
         reason: updatedReason,
@@ -232,6 +289,7 @@ export class SalesReturnsService {
   private validateReturnQuantities(
     returnItems: CreateSalesReturnDto['items'],
     invoiceItems: InvoiceItem[],
+    alreadyReturnedMap: Map<string, number>,
   ) {
     for (const returnItem of returnItems) {
       const invoiceItem = invoiceItems.find(
@@ -243,9 +301,16 @@ export class SalesReturnsService {
         );
         throw new InvoiceItemNotFoundException(returnItem.invoiceItemId);
       }
-      if (returnItem.quantity > Number(invoiceItem.quantity)) {
+
+      // Calculate remaining eligible quantity
+      const previouslyReturnedQty =
+        alreadyReturnedMap.get(returnItem.invoiceItemId) || 0;
+      const remainingReturnableQty =
+        Number(invoiceItem.quantity) - previouslyReturnedQty;
+
+      if (returnItem.quantity > remainingReturnableQty) {
         this.logger.warn(
-          `Return quantity exceeds purchased quantity for item: ${returnItem.invoiceItemId}`,
+          `Return quantity exceeds purchased/remaining quantity for item: ${returnItem.invoiceItemId}`,
         );
         throw new ReturnQuantityExceededException(returnItem.invoiceItemId);
       }
@@ -332,9 +397,10 @@ export class SalesReturnsService {
   private async getReturnWithItems(
     tx: Prisma.TransactionClient,
     returnId: string,
+    tenantId: string,
   ): Promise<SalesReturnWithItems> {
-    const salesReturn = await tx.salesReturn.findUnique({
-      where: { id: returnId },
+    const salesReturn = await tx.salesReturn.findFirst({
+      where: { id: returnId, tenantId: tenantId },
       include: { items: true },
     });
 
@@ -411,7 +477,7 @@ export class SalesReturnsService {
     if (salesReturn.refundMethod === RefundMethod.CREDIT_NOTE) {
       await this.issueCreditNote(tx, salesReturn);
       await tx.customer.update({
-        where: { id: salesReturn.customerId },
+        where: { id: salesReturn.customerId, tenantId: salesReturn.tenantId },
         data: { totalPurchases: { decrement: salesReturn.totalAmount } },
       });
     } else if (salesReturn.refundMethod === RefundMethod.ACCOUNT_DEDUCTION) {
@@ -484,9 +550,10 @@ export class SalesReturnsService {
     tx: Prisma.TransactionClient,
     returnId: string,
     userId: string,
+    tenantId: string,
   ) {
     return await tx.salesReturn.update({
-      where: { id: returnId },
+      where: { id: returnId, tenantId: tenantId },
       data: {
         status: ReturnStatus.APPROVED,
         approvedBy: userId,
@@ -500,7 +567,7 @@ export class SalesReturnsService {
     item: SalesReturnWithItems['items'][number],
   ) {
     const isGood = ReturnCondition.GOOD === item.condition;
-    await tx.stock.updateMany({
+    const Result = await tx.stock.updateMany({
       where: {
         productId: item.productId,
         variantId: item.variantId || null,
@@ -512,6 +579,12 @@ export class SalesReturnsService {
         damagedQuantity: !isGood ? { increment: item.quantity } : undefined,
       },
     });
+    if (Result.count === 0) {
+      this.logger.debug(
+        `Stock record not found for Product ID: ${item.productId}, Warehouse ID: ${item.warehouseId}`,
+      );
+      throw new StockRecordNotFoundException(item.productId, item.warehouseId);
+    }
   }
 
   private async recordStockMovement(

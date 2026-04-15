@@ -27,20 +27,23 @@ export class SalesReturnsController {
     @Body() createSalesReturnDto: CreateSalesReturnDto,
     @Request() req: AuthRequest,
   ) {
-    const userId = req.user.user_id;
     return this.salesReturnsService.createReturnRequest(
       createSalesReturnDto,
-      userId,
+      req.user.user_id,
+      req.user.tenant_id,
     );
   }
 
   @Patch(':id/approve')
   async approveReturn(
-    @Param('id') returnId: string,
+    @Param('id', ParseUUIDPipe) returnId: string,
     @Request() req: AuthRequest,
   ) {
-    const userId = req.user.user_id;
-    return this.salesReturnsService.approveReturn(returnId, userId);
+    return this.salesReturnsService.approveReturn(
+      returnId,
+      req.user.user_id,
+      req.user.tenant_id,
+    );
   }
 
   @Patch(':id/reject')
@@ -53,6 +56,7 @@ export class SalesReturnsController {
       returnId,
       req.user.user_id,
       rejectDto,
+      req.user.tenant_id,
     );
     return {
       message: 'Sales return rejected successfully',
