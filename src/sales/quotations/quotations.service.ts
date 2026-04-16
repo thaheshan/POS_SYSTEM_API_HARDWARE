@@ -3,6 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  Inject,
 } from '@nestjs/common';
 import { Prisma, QuotationStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -16,10 +17,16 @@ import {
   QuotationsPaginatedResponse,
   ConvertToInvoiceDto,
 } from './dto/quotation.dto';
+import type { CacheClient } from 'src/cache/cache-client.interface';
 
 @Injectable()
 export class QuotationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly quotationCacheTtlSeconds = 300; // 5 minutes
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject('REDIS_CLIENT') private readonly redis: CacheClient,
+  ) {}
 
   async createQuotation(
     tenantId: string,
@@ -139,6 +146,9 @@ export class QuotationsService {
       },
     });
 
+    // Invalidate list cache
+    await this.invalidateQuotationsListCache(tenantId);
+
     return this.formatQuotationResponse(quotation);
   }
 
@@ -152,6 +162,13 @@ export class QuotationsService {
   ): Promise<QuotationsPaginatedResponse> {
     // Auto-expire quotations before fetching
     await this.autoExpireQuotations(tenantId);
+
+    // Try cache first (using filters as part of cache key)
+    const cacheKey = this.getQuotationsListCacheKey(tenantId, filters);
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
 
     const { status, limit = 50, cursor } = filters;
 
@@ -188,7 +205,7 @@ export class QuotationsService {
 
     const data = quotations.map((q) => this.formatQuotationResponse(q));
 
-    return {
+    const response: QuotationsPaginatedResponse = {
       data,
       pagination: {
         nextCursor,
@@ -196,6 +213,16 @@ export class QuotationsService {
         limit,
       },
     };
+
+    // Cache the list response
+    await this.redis.set(
+      cacheKey,
+      JSON.stringify(response),
+      'EX',
+      this.quotationCacheTtlSeconds,
+    );
+
+    return response;
   }
 
   async getQuotationById(
@@ -204,6 +231,13 @@ export class QuotationsService {
   ): Promise<QuotationResponse> {
     // Auto-expire before fetching
     await this.autoExpireQuotations(tenantId);
+
+    // Try cache first
+    const cacheKey = this.getQuotationCacheKey(tenantId, id);
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
 
     const quotation = await this.prisma.quotation.findFirst({
       where: {
@@ -219,7 +253,17 @@ export class QuotationsService {
       throw new NotFoundException(`Quotation ${id} not found`);
     }
 
-    return this.formatQuotationResponse(quotation);
+    const response = this.formatQuotationResponse(quotation);
+
+    // Cache the response
+    await this.redis.set(
+      cacheKey,
+      JSON.stringify(response),
+      'EX',
+      this.quotationCacheTtlSeconds,
+    );
+
+    return response;
   }
 
   async updateQuotation(
@@ -349,6 +393,9 @@ export class QuotationsService {
       },
     });
 
+    // Invalidate cache
+    await this.invalidateQuotationCache(tenantId, id);
+    await this.invalidateQuotationsListCache(tenantId);
     return this.formatQuotationResponse(updated);
   }
 
@@ -378,6 +425,10 @@ export class QuotationsService {
         items: true,
       },
     });
+
+    // Invalidate both individual and list cache
+    await this.invalidateQuotationCache(tenantId, id);
+    await this.invalidateQuotationsListCache(tenantId);
 
     return this.formatQuotationResponse(updated);
   }
@@ -553,6 +604,10 @@ export class QuotationsService {
       return newInvoice;
     });
 
+    // Invalidate both individual and list cache
+    await this.invalidateQuotationCache(tenantId, quotationId);
+    await this.invalidateQuotationsListCache(tenantId);
+
     return {
       invoiceId: invoice.id,
       message: `Quotation ${quotation.quotationNumber} successfully converted to Invoice ${invoiceNumber}`,
@@ -619,5 +674,51 @@ export class QuotationsService {
         lineTotal: item.lineTotal?.toString() || null,
       })),
     };
+  }
+
+  private getQuotationCacheKey(tenantId: string, id: string): string {
+    return `quo:${tenantId}:${id}`;
+  }
+
+  private async invalidateQuotationCache(
+    tenantId: string,
+    id: string,
+  ): Promise<void> {
+    const cacheKey = this.getQuotationCacheKey(tenantId, id);
+    await this.redis.del(cacheKey);
+  }
+
+  private getQuotationsListCacheKey(
+    tenantId: string,
+    filters: { status?: string; limit?: number; cursor?: string },
+  ): string {
+    const status = filters.status || 'all';
+    const cursor = filters.cursor || 'start';
+    const limit = filters.limit || 50;
+    return `quo_list:${tenantId}:${status}:${limit}:${cursor}`;
+  }
+
+  private async invalidateQuotationsListCache(tenantId: string): Promise<void> {
+    // Invalidate all common quotation list cache entries for this tenant
+    // by deleting keys for all common status filters and cursor positions
+    const statuses = [
+      'all',
+      'draft',
+      'sent',
+      'accepted',
+      'rejected',
+      'expired',
+    ];
+    const limits = [10, 20, 50, 100];
+    const cursors = ['start', 'null'];
+
+    for (const status of statuses) {
+      for (const limit of limits) {
+        for (const cursor of cursors) {
+          const key = `quo_list:${tenantId}:${status}:${limit}:${cursor}`;
+          await this.redis.del(key);
+        }
+      }
+    }
   }
 }
