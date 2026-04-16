@@ -169,6 +169,7 @@ model Shop {
   salesInvoices           SalesInvoice[]
   salesReturns            SalesReturn[]
   creditNotes             CreditNote[]
+  reportsGenerated        ReportsGenerated[]
  
 
   @@map("shops")
@@ -231,6 +232,7 @@ model Branch {
   warehouses  Warehouse[]
   stocks      Stock[]
   salesInvoices SalesInvoice[]
+  reportsGenerated ReportsGenerated[]
 
   @@index([tenantId])
   @@map("branches")
@@ -828,7 +830,51 @@ model CreditNote {
   @@map("credit_notes")
 }
 
-
-
-
+model ReportsGenerated {
+  id                    String   @id @default(uuid()) @map("report_id")
+  tenantId              String   @map("tenant_id")
+  branchId              String?  @map("branch_id")
+  reportDate            DateTime @db.Date @map("report_date")
+  
+  // Overall KPIs
+  totalRevenue          Decimal  @db.Decimal(12, 2) @map("total_revenue")
+  totalTransactions     Int      @map("total_transactions")
+  averageBill           Decimal  @db.Decimal(10, 2) @map("average_bill")
+  largestTransaction    Decimal  @db.Decimal(12, 2) @map("largest_transaction")
+  smallestTransaction   Decimal  @db.Decimal(12, 2) @map("smallest_transaction")
+  
+  // Payment Breakdown
+  cashAmount            Decimal  @db.Decimal(12, 2) @map("cash_amount")
+  cardAmount            Decimal  @db.Decimal(12, 2) @map("card_amount")
+  creditAmount          Decimal  @db.Decimal(12, 2) @map("credit_amount")
+  paymentPercentages    Json?    @map("payment_percentages") // { cash: 50.5, card: 30.2, credit: 19.3 }
+  
+  // Profit & Expenses
+  cogs                  Decimal  @db.Decimal(12, 2)
+  grossProfit           Decimal  @db.Decimal(12, 2) @map("gross_profit")
+  operatingExpenses     Decimal  @db.Decimal(12, 2) @map("operating_expenses")
+  netProfit             Decimal  @db.Decimal(12, 2) @map("net_profit")
+  
+  // VAT
+  vatCollected          Decimal  @db.Decimal(10, 2) @map("vat_collected")
+  vatPaid               Decimal  @db.Decimal(10, 2) @map("vat_paid")
+  netVat                Decimal  @db.Decimal(10, 2) @map("net_vat")
+  
+  // Nested Arrays (JSONB)
+  categoryRankings      Json?    @map("category_rankings") // Array of { category_id, name, revenue, revenue_pct, profit_margin, vs_yesterday_pct, top_product }
+  staffPerformance      Json?    @map("staff_performance")   // Array of { cashier_id, name, transactions, revenue }
+  lowStockItems         Json?    @map("low_stock_items")     // Array of { product_id, name, quantity }
+  outOfStockItems       Json?    @map("out_of_stock_items")  // Array of { product_id, name }
+  
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  
+  shop                  Shop     @relation(fields: [tenantId], references: [id])
+  branch                Branch?  @relation(fields: [branchId], references: [id])
+  
+  @@unique([tenantId, branchId, reportDate], name: "unique_report_per_day")
+  @@index([tenantId])
+  @@index([tenantId, branchId, reportDate])
+  @@map("reports_generated")
+}
 
