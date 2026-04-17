@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsEnum } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, Matches } from 'class-validator';
 
 export enum ExportFormat {
   CSV = 'csv',
@@ -6,9 +6,12 @@ export enum ExportFormat {
 }
 
 export class GetWeeklyReportDto {
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'week_start must be in strict YYYY-MM-DD format',
+  })
   @IsDateString(
     {},
-    { message: 'week_start must be a valid ISO date string (YYYY-MM-DD)' },
+    { message: 'week_start must be a valid calendar date (YYYY-MM-DD)' },
   )
   week_start!: string;
 

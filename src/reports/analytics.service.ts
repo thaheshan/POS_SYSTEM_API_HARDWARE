@@ -12,7 +12,6 @@ import {
   WeeklyAnalyticsReport,
 } from './interfaces/analytics-report.interface';
 import { ReportGenerationException } from './exceptions/Analatics_report_generatio.exception';
-import { Response } from 'express';
 import { Logger } from '@nestjs/common';
 import { GetMonthlyReportDto } from './dto/get-monthly-report.dto';
 import { Prisma } from '@prisma/client';
@@ -25,17 +24,16 @@ export class AnalyticsService {
   public async generateWeeklyReport(
     tenantId: string,
     query: GetWeeklyReportDto,
-    response?: Response,
   ): Promise<WeeklyAnalyticsReport> {
     this.logger.log(
       `Initiating weekly report generation for tenant: ${tenantId}, weekStart: ${query.week_start}`,
     );
     try {
       const { week_start } = query;
-      const startDate = new Date(week_start);
+      const startDate = new Date(`${week_start}T00:00:00.000Z`);
 
       const endDate = new Date(startDate);
-      endDate.setDate(startDate.getDate() + 7);
+      endDate.setUTCDate(startDate.getUTCDate() + 7);
 
       const cachedReport = await this.prisma.generatedReport.findFirst({
         where: {
@@ -61,12 +59,14 @@ export class AnalyticsService {
         categoryPerformance,
         customerInsights,
         staffPerformance,
+        taxUpdate,
       ] = await Promise.all([
         this.getReorderSuggestions(tenantId),
         this.getDailyRevenue(tenantId, startDate, endDate),
         this.getCategoryPerformance(tenantId, startDate, endDate, 'WEEKLY'),
         this.getCustomerInsights(tenantId, startDate, endDate),
         this.getStaffPerformance(tenantId, startDate, endDate),
+        this.getTaxUpdate(tenantId, startDate, endDate),
       ]);
 
       const report: WeeklyAnalyticsReport = {
@@ -76,6 +76,7 @@ export class AnalyticsService {
         categoryPerformance,
         reorderSuggestions,
         customerInsights,
+        taxUpdate,
         staffPerformance,
       };
 
@@ -101,7 +102,7 @@ export class AnalyticsService {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new ReportGenerationException('generateWeeklyReport');
+      throw new ReportGenerationException('generateWeeklyReport', error);
     }
   }
 
@@ -117,8 +118,10 @@ export class AnalyticsService {
       const { month } = query;
       const [yearStr, monthStr] = month.split('-');
 
-      const startDate = new Date(Number(yearStr), Number(monthStr) - 1, 1);
-      const endDate = new Date(Number(yearStr), Number(monthStr), 1);
+      const startDate = new Date(
+        Date.UTC(Number(yearStr), Number(monthStr) - 1, 1),
+      );
+      const endDate = new Date(Date.UTC(Number(yearStr), Number(monthStr), 1));
 
       const cachedReport = await this.prisma.generatedReport.findFirst({
         where: {
@@ -163,7 +166,6 @@ export class AnalyticsService {
         reorderSuggestions,
       };
 
-      // 3. PERSISTENCE
       await this.prisma.generatedReport.create({
         data: {
           tenantId,
@@ -216,14 +218,14 @@ export class AnalyticsService {
     const invoices = await this.prisma.salesInvoice.findMany({
       where: {
         tenantId,
-        invoiceDate: {
+        createdAt: {
           gte: startDate,
           lt: endDate,
         },
         status: 'COMPLETED',
       },
       select: {
-        invoiceDate: true,
+        createdAt: true,
         totalAmount: true,
       },
     });
@@ -232,15 +234,20 @@ export class AnalyticsService {
     const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
+    const toUtcDateString = (date: Date) => {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+    };
+
     for (let i = 0; i < diffDays; i++) {
       const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + i);
-      const dateString = currentDate.toISOString().split('T')[0];
+      currentDate.setUTCDate(startDate.getUTCDate() + i);
+      const dateString = toUtcDateString(currentDate);
       revenueMap.set(dateString, 0);
     }
 
     for (const invoice of invoices) {
-      const dateString = invoice.invoiceDate.toISOString().split('T')[0];
+      const dateString = toUtcDateString(invoice.createdAt);
       const currentSum = revenueMap.get(dateString) || 0;
       revenueMap.set(dateString, currentSum + invoice.totalAmount.toNumber());
     }
@@ -342,7 +349,7 @@ export class AnalyticsService {
       where: {
         invoice: {
           tenantId,
-          invoiceDate: { gte: startDate, lt: endDate },
+          createdAt: { gte: startDate, lt: endDate },
           status: 'COMPLETED',
         },
       },
@@ -376,12 +383,11 @@ export class AnalyticsService {
       categoryMap.set(categoryId, current);
     }
 
-    // Pick comparison window based on report type
     const previousStartDate = new Date(startDate);
     if (reportType === 'WEEKLY') {
-      previousStartDate.setDate(startDate.getDate() - 7);
+      previousStartDate.setUTCDate(startDate.getUTCDate() - 7);
     } else {
-      previousStartDate.setMonth(startDate.getMonth() - 1);
+      previousStartDate.setUTCMonth(startDate.getUTCMonth() - 1);
     }
 
     const previousReport = await this.prisma.generatedReport.findFirst({
@@ -442,7 +448,7 @@ export class AnalyticsService {
       by: ['customerId'],
       where: {
         tenantId,
-        invoiceDate: { gte: startDate, lt: endDate },
+        createdAt: { gte: startDate, lt: endDate },
         status: 'COMPLETED',
         customerId: { not: null },
       },
@@ -494,7 +500,7 @@ export class AnalyticsService {
       by: ['cashierId'],
       where: {
         tenantId,
-        invoiceDate: { gte: startDate, lt: endDate },
+        createdAt: { gte: startDate, lt: endDate },
         status: 'COMPLETED',
         cashierId: { not: null },
       },
@@ -560,9 +566,9 @@ export class AnalyticsService {
       _sum: { profit: true },
     });
 
-    const weeklyProfit = Number(weeklyAggregation._sum.profit ?? 0);
+    const periodProfit = Number(weeklyAggregation._sum.profit ?? 0);
 
-    const startOfYear = new Date(startDate.getFullYear(), 0, 1);
+    const startOfYear = new Date(Date.UTC(startDate.getUTCFullYear(), 0, 1));
 
     const ytdAggregation = await this.prisma.salesInvoiceItem.aggregate({
       where: {
@@ -599,7 +605,7 @@ export class AnalyticsService {
     );
 
     return {
-      weeklyProfit: Number(weeklyProfit.toFixed(2)),
+      periodProfit: Number(periodProfit.toFixed(2)),
       ytdIncome: Number(ytdIncome.toFixed(2)),
       estimatedTaxLiability: Number(estimatedTaxLiability.toFixed(2)),
       advanceTaxPaid: Number(advanceTaxPaid.toFixed(2)),

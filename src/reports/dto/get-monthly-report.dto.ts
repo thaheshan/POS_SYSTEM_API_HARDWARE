@@ -9,6 +9,6 @@ export class GetMonthlyReportDto {
   month!: string;
 
   @IsOptional()
-  @IsEnum(ExportFormat)
+  @IsEnum(ExportFormat, { message: 'export must be either csv or pdf' })
   export?: ExportFormat;
 }

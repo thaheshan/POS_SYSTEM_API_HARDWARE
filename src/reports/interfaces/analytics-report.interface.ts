@@ -41,7 +41,7 @@ export interface StaffPerformance {
 }
 
 export interface TaxUpdate {
-  weeklyProfit: number;
+  periodProfit: number;
   ytdIncome: number;
   estimatedTaxLiability: number;
   advanceTaxPaid: number;
@@ -55,6 +55,7 @@ export interface WeeklyAnalyticsReport {
   categoryPerformance: CategoryPerformance[];
   reorderSuggestions: ReorderSuggestion[];
   customerInsights: CustomerInsight[];
+  taxUpdate: TaxUpdate;
   staffPerformance: StaffPerformance[];
 }
 

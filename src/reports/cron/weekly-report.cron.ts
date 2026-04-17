@@ -18,10 +18,14 @@ export class WeeklyReportCronService {
     this.logger.log('CRON INITIATED: Automated Weekly Report Generation');
 
     const today = new Date();
-    const lastMonday = new Date(today);
-    lastMonday.setDate(today.getDate() - 7);
+    const utcToday = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+    );
+    const lastMonday = new Date(utcToday);
+    lastMonday.setUTCDate(utcToday.getUTCDate() - 7);
 
-    const weekStartString = lastMonday.toISOString().split('T')[0];
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const weekStartString = `${lastMonday.getUTCFullYear()}-${pad(lastMonday.getUTCMonth() + 1)}-${pad(lastMonday.getUTCDate())}`;
 
     try {
       const shops = await this.prisma.shop.findMany({
@@ -39,7 +43,6 @@ export class WeeklyReportCronService {
           const report = await this.analyticsService.generateWeeklyReport(
             shop.id,
             { week_start: weekStartString },
-            undefined,
           );
 
           if (shop.email) {
