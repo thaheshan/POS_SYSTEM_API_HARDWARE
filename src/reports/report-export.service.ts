@@ -8,8 +8,33 @@ import { Parser } from 'json2csv';
 import PDFDocument from 'pdfkit';
 export type AnalyticsReport = WeeklyAnalyticsReport | MonthlyAnalyticsReport;
 
+const CSV_FORMULA_PREFIXES = ['=', '+', '-', '@'];
+
 @Injectable()
 export class ReportExportService {
+  private sanitizeCsvValue(value: unknown): unknown {
+    if (typeof value !== 'string') return value;
+
+    const trimmed = value.trimStart();
+    if (
+      trimmed.length > 0 &&
+      CSV_FORMULA_PREFIXES.includes(trimmed.charAt(0))
+    ) {
+      return `'${value}`;
+    }
+
+    return value;
+  }
+
+  private sanitizeCsvRow<T extends Record<string, unknown>>(row: T): T {
+    const sanitizedEntries = Object.entries(row).map(([key, value]) => [
+      key,
+      this.sanitizeCsvValue(value),
+    ]);
+
+    return Object.fromEntries(sanitizedEntries) as T;
+  }
+
   public generateCsv<T>(
     data: T[],
     filename: string,
@@ -20,8 +45,20 @@ export class ReportExportService {
       'Content-Disposition': `attachment; filename="${filename}.csv"`,
     });
 
+    if (data.length === 0) {
+      return new StreamableFile(Buffer.from(''));
+    }
+
+    const sanitizedData = data.map((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return row;
+      }
+
+      return this.sanitizeCsvRow(row as Record<string, unknown>);
+    });
+
     const parser = new Parser();
-    const csvString = parser.parse(data);
+    const csvString = parser.parse(sanitizedData);
 
     return new StreamableFile(Buffer.from(csvString));
   }
@@ -44,7 +81,7 @@ export class ReportExportService {
     doc
       .fontSize(10)
       .fillColor('gray')
-      .text(`Generated on: ${new Date().toLocaleString()}`, {
+      .text(`Generated on (UTC): ${new Date().toISOString()}`, {
         align: 'center',
       });
 
