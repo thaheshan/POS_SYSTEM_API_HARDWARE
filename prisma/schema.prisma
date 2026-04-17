@@ -108,6 +108,7 @@ model Shop {
   id                    String    @id @default(uuid()) @map("shop_id") @db.Uuid
   name                  String    @map("shop_name") @db.VarChar(200)
   businessRegistration  String?   @map("business_registration") @db.VarChar(100)
+  email                 String?   
   
   users                 User[]
   branches              Branch[]
@@ -127,6 +128,20 @@ model Shop {
   generatedReports      GeneratedReport[] 
   suppliers             Supplier[]
   @@map("shops")
+}
+
+model AdvanceTaxPayment {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  paymentDate   DateTime @db.Date @map("payment_date")
+  amount        Float
+  reference     String?
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("advance_tax_payments")
 }
 
 model Branch {
@@ -406,6 +421,7 @@ model SalesInvoice {
   id                 String             @id @default(uuid()) @map("invoice_id") @db.Uuid
   tenantId           String             @map("tenant_id") @db.Uuid
   branchId           String             @map("branch_id") @db.Uuid
+  customerId         String?            @map("customer_id") @db.Uuid
   invoiceNumber      String             @unique @map("invoice_number") @db.VarChar(50)
   invoiceDate        DateTime           @map("invoice_date") @db.Date
   invoiceTime        DateTime           @map("invoice_time") @db.Time
@@ -432,6 +448,7 @@ model SalesInvoice {
   shop               Shop               @relation(fields: [tenantId], references: [id])
   branch             Branch             @relation(fields: [branchId], references: [id])
   cashier            User?              @relation("InvoiceCashier", fields: [cashierId], references: [user_id])
+  customer           Customer?          @relation(fields: [customerId], references: [id])
   
   items              SalesInvoiceItem[]
   salesReturns       SalesReturn[]
@@ -479,6 +496,7 @@ model Customer {
   shop               Shop           @relation(fields: [tenantId], references: [id])
   salesReturns       SalesReturn[]
   creditNotes        CreditNote[]
+  salesInvoices      SalesInvoice[]
 
   @@map("customers")
 }
