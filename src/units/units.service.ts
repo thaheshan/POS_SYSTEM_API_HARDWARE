@@ -28,8 +28,9 @@ export class UnitsService {
         `Unit '${createUnitDto.unitName}' created with id ${unit.id}`,
       );
       return unit;
-    } catch (error) {
-      if (error.code === 'P2002') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'P2002') {
         this.logger.warn(
           `Unit already exists: ${createUnitDto.unitName} for tenant ${tenant_id}`,
         );
@@ -68,8 +69,9 @@ export class UnitsService {
       });
       this.logger.log(`Unit ${id} updated for tenant ${tenant_id}`);
       return updated;
-    } catch (error) {
-      if (error.code === 'P2002') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'P2002') {
         this.logger.warn(
           `Unit already exists: ${updateUnitDto.unitName} for tenant ${tenant_id}`,
         );

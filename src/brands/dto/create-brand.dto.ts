@@ -3,7 +3,7 @@ import { IsString, IsOptional, IsBoolean, IsNotEmpty } from 'class-validator';
 export class CreateBrandDto {
   @IsString()
   @IsNotEmpty()
-  brandName: string;
+  brandName!: string;
 
   @IsString()
   @IsOptional()

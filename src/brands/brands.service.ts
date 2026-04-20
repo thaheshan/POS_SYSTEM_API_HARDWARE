@@ -27,8 +27,9 @@ export class BrandsService {
         `Brand '${createBrandDto.brandName}' created with id ${brand.id}`,
       );
       return brand;
-    } catch (error) {
-      if (error.code === 'P2002') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'P2002') {
         this.logger.warn(
           `Brand already exists: ${createBrandDto.brandName} for tenant ${tenant_id}`,
         );
@@ -62,13 +63,14 @@ export class BrandsService {
 
     try {
       const updated = await this.prisma.brand.update({
-        where: { id, tenantId: tenant_id },
+        where: { id },
         data: updateBrandDto,
       });
       this.logger.log(`Brand ${id} updated for tenant ${tenant_id}`);
       return updated;
-    } catch (error) {
-      if (error.code === 'P2002') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'P2002') {
         this.logger.warn(
           `Brand already exists: ${updateBrandDto.brandName} for tenant ${tenant_id}`,
         );
@@ -93,7 +95,7 @@ export class BrandsService {
     }
 
     const deleted = await this.prisma.brand.delete({
-      where: { id, tenantId: tenant_id },
+      where: { id },
     });
     this.logger.log(`Brand ${id} deleted for tenant ${tenant_id}`);
     return deleted;
