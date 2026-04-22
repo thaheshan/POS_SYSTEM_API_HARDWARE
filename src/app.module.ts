@@ -13,6 +13,7 @@ import { RedisModule } from './cache/redis.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { SalesModule } from './sales/sales.module';
 import { ReportsModule } from './reports/reports.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ReportsModule } from './reports/reports.module';
     InventoryModule,
     SalesModule,
     ReportsModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [

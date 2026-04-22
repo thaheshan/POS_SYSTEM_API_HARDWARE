@@ -35,7 +35,7 @@ const pool = new Pool({
 });
 
 const shopName = 'ABC Hardware';
-const userEmail = 'john@abchardware.lk';
+const userEmail = 'cashier@test.com'; //Change as needed
 
 try {
   await pool.query('BEGIN');
@@ -60,11 +60,12 @@ try {
     throw new Error('Could not resolve tenant/shop ID for user seeding.');
   }
 
-  const hash = await bcrypt.hash('password123', 10);
+  const hash = await bcrypt.hash('Cashier@123', 10); // Change password as needed
 
+  // Change the role and other user details as needed. This creates/updates a cashier user.
   await pool.query(
     `INSERT INTO users (user_id, tenant_id, email, password_hash, first_name, last_name, role, is_active, is_verified, updated_at)
-     VALUES ($1, $2, $3, $4, 'John', 'Silva', 'owner', true, true, now())
+     VALUES ($1, $2, $3, $4, 'Kamal', 'Sharma', 'cashier', true, true, now())
      ON CONFLICT (email)
      DO UPDATE SET
        tenant_id = EXCLUDED.tenant_id,
