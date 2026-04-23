@@ -1,14 +1,29 @@
+// src/auth/auth.controller.ts
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { LoginDto } from '../system/dto/login.dto';
 import { PasswordResetRequestDto } from './dto/password-reset-request.dto';
 import { PasswordResetDto } from './dto/password-reset.dto';
 
-@ApiTags('Auth')
+@ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login with email and password' })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful, returns JWT token and role',
+  })
+  @ApiResponse({ status: 401, description: 'Invalid email or password' })
+  @ApiResponse({ status: 403, description: 'Account inactive or unverified' })
+  @ApiResponse({ status: 500, description: 'Failed to process login' })
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto);
+  }
   @Post('password-reset-request')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'BE-PSW-01: Initiate password reset' })
