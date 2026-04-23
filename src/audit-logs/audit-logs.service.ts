@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 
 import { GetAuditLogsDto } from './dto/get-audit-logs.dto';
 import {
@@ -18,18 +22,22 @@ export class AuditLogsService {
     dto: GetAuditLogsDto,
   ): Promise<PaginatedAuditLogs> {
     this.logger.log(
-      `Fetching audit logs for tenant: ${tenantId}, page: ${dto.page}`,
+      `Fetching audit logs for tenant: ${tenantId}, page: ${dto.page || 1}`,
     );
+
     try {
       const whereClause = this.buildWhereClause(tenantId, dto);
-      const skip = (dto.page - 1) * dto.limit;
+
+      const page = dto.page ? Number(dto.page) : 1;
+      const limit = dto.limit ? Number(dto.limit) : 50;
+      const skip = (page - 1) * limit;
 
       const [total, rawLogs] = await this.prisma.$transaction([
         this.prisma.auditLog.count({ where: whereClause }),
         this.prisma.auditLog.findMany({
           where: whereClause,
-          skip,
-          take: dto.limit,
+          skip: skip,
+          take: limit,
           orderBy: { timestamp: 'desc' },
         }),
       ]);
@@ -50,17 +58,19 @@ export class AuditLogsService {
         data,
         meta: {
           total,
-          page: dto.page,
-          limit: dto.limit,
-          totalPages: Math.ceil(total / dto.limit),
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
         },
       };
     } catch (error) {
       this.logger.error(
-        `Error fetching audit logs for tenant: ${tenantId}`,
-        error,
+        `Failed to fetch audit logs for tenant ${tenantId}`,
+        (error as Error).stack,
       );
-      throw error;
+      throw new InternalServerErrorException(
+        'An error occurred while fetching audit logs',
+      );
     }
   }
 

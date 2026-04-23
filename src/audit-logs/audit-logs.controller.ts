@@ -23,7 +23,7 @@ export class AuditLogsController {
   async getAuditLogs(
     @Req() req: AuthenticatedRequest,
     @Query() queryDto: GetAuditLogsDto,
-    @Res({ passthrough: true }) res: Response,
+    @Res() res: Response,
   ) {
     const tenantId = req.user?.tenant_id;
     this.logger.log(
@@ -47,5 +47,10 @@ export class AuditLogsController {
       res.status(200).send(csvData);
       return;
     }
+    res.status(200).json({
+      success: true,
+      data: paginatedLogs,
+    });
+    return;
   }
 }
