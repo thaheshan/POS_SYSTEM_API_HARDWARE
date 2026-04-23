@@ -23,5 +23,91 @@ model User {
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
 
+  invoices SalesInvoice[] @relation("InvoiceCashier")
+
   @@map("users")
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  type        String // sms / email
+  event       String // low_stock / large_transaction / daily_summary / invoice_email / welcome
+  recipient   String // phone number / email address
+  message     String
+  status      String   @default("pending") // pending / sent / failed
+  referenceId String?  @map("reference_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("notifications")
+}
+
+model SalesInvoice {
+  id            String   @id @default(uuid())
+  invoiceNumber String   @unique @map("invoice_number")
+  tenantId      String   @map("tenant_id")
+  branchId      String   @map("branch_id")
+  cashierId     String   @map("cashier_id")
+  customerId    String?  @map("customer_id")
+  subtotal      Float    @default(0)
+  discountTotal Float    @default(0) @map("discount_total")
+  vatTotal      Float    @default(0) @map("vat_total")
+  grandTotal    Float    @default(0) @map("grand_total")
+  status        String   @default("completed")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  cashier  User               @relation("InvoiceCashier", fields: [cashierId], references: [user_id])
+  items    SalesInvoiceItem[]
+  payments Payment[]
+
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceItem {
+  id          String @id @default(uuid())
+  invoiceId   String @map("invoice_id")
+  productId   String @map("product_id")
+  quantity    Float
+  unitPrice   Float  @map("unit_price")
+  costPrice   Float  @map("cost_price")
+  lineTotal   Float  @map("line_total")
+  lineTax     Float  @default(0) @map("line_tax")
+  profit      Float  @default(0)
+  taxCategory String @default("standard_vat") @map("tax_category")
+
+  invoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("sales_invoice_items")
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  invoiceId     String   @map("invoice_id")
+  paymentMethod String   @map("payment_method")
+  amount        Float
+  reference     String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  invoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model DailyTaxTracking {
+  id            String   @id @default(uuid())
+  date          DateTime @db.Date
+  tenantId      String   @map("tenant_id")
+  taxableProfit Float    @default(0) @map("taxable_profit")
+  outputVat     Float    @default(0) @map("output_vat")
+  inputVat      Float    @default(0) @map("input_vat")
+  netVatPayable Float    @default(0) @map("net_vat_payable")
+  incomeTax     Float    @default(0) @map("income_tax")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([date, tenantId])
+  @@index([tenantId])
+  @@map("daily_tax_tracking")
 }
