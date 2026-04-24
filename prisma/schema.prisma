@@ -25,3 +25,14 @@ model User {
 
   @@map("users")
 }
+
+model ShopSettings {
+  settings_id    String   @id @default(uuid())
+  tenant_id      String   @unique
+  feature_flags  Json     @default("{}")
+  plan           String   @default("starter")
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@map("shop_settings")
+}
