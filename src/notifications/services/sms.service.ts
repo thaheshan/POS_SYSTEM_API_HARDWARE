@@ -19,13 +19,17 @@ export class SmsService {
     const phone = to.replace(/^\+/, '').replace(/^0/, '94');
 
     try {
-      await axios.post('https://app.notify.lk/api/v1/send', {
-        user_id: process.env.NOTIFY_USER_ID,
-        api_key: process.env.NOTIFY_API_KEY,
-        sender_id: process.env.NOTIFY_SENDER_ID,
-        to: phone,
-        message,
-      });
+      await axios.post('https://app.text.lk/api/v3/sms/send', {
+      recipient: phone,
+      sender_id: process.env.TEXTLK_SENDER_ID,
+      message,
+      }, {
+     headers: {
+    'Authorization': `Bearer ${process.env.TEXTLK_API_TOKEN}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+     }
+});
 
       // Log notification
       await this.prisma.notification.create({
