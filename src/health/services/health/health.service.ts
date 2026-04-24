@@ -7,6 +7,30 @@ import { PrismaService } from 'src/prisma/prisma.service';
 @Injectable()
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  private extractBalance(payload: unknown): number {
+    if (!this.isRecord(payload)) return 0;
+
+    const directBalance = payload.balance;
+    const nestedBalance = this.isRecord(payload.data)
+      ? payload.data.balance
+      : undefined;
+    const rawBalance = nestedBalance ?? directBalance;
+
+    const parsedBalance =
+      typeof rawBalance === 'number'
+        ? rawBalance
+        : typeof rawBalance === 'string'
+          ? Number(rawBalance)
+          : 0;
+
+    return Number.isFinite(parsedBalance) ? parsedBalance : 0;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject('TEMP_REDIS_CLIENT') private readonly redisClient: Redis, // Inject S3 and SMS services
@@ -75,36 +99,45 @@ export class HealthService {
       const cachedBalance = await this.redisClient.get(CACHE_KEY);
 
       if (cachedBalance !== null) {
-        this.logger.debug(
-          `SMS balance cache hit for key: ${CACHE_KEY} (value=${cachedBalance})`,
-        );
-        return parseInt(cachedBalance, 10);
+        const parsedCachedBalance = Number(cachedBalance);
+        return Number.isFinite(parsedCachedBalance) ? parsedCachedBalance : 0;
       }
 
-      this.logger.debug(
-        `SMS balance cache miss for key: ${CACHE_KEY}, fetching from provider`,
-      );
+      const apiKey = this.configService.get<string>('SMS_API_KEY');
 
-      // If not in cache, call external Text.lk API (Mocked here)
-      // const response = await this.smsService.getBalance();
-      const actualBalance = 1520;
+      if (!apiKey) {
+        this.logger.warn('SMS API key is missing in .env');
+        return 0;
+      }
 
-      // Store in Redis with an Expiration (EX) time
+      const response = await fetch('https://app.text.lk/api/v3/balance', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Text.lk API failed with HTTP status: ${response.status}`,
+        );
+      }
+
+      const responseData: unknown = await response.json();
+
+      const actualBalance = this.extractBalance(responseData);
+
       await this.redisClient.set(
         CACHE_KEY,
-        actualBalance,
+        String(actualBalance),
         'EX',
         CACHE_TTL_SECONDS,
-      );
-
-      this.logger.debug(
-        `SMS balance cached under key: ${CACHE_KEY} for ${CACHE_TTL_SECONDS}s`,
       );
 
       return actualBalance;
     } catch (error) {
       this.logger.error('SMS API health check failed', (error as Error).stack);
-      this.logger.warn('Returning fallback SMS balance: 0');
       return 0;
     }
   }
