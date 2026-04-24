@@ -57,6 +57,48 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Feature Flag System
+
+This project includes a tenant-level feature flag system backed by Prisma and Redis.
+
+- Redis key format: `pos_features:{tenant_id}`
+- DB source of truth: `ShopSettings.feature_flags` JSON + `ShopSettings.plan`
+- Plan map source: `src/config/plan-features.config.ts`
+
+### Required setup
+
+1. Set a valid `DATABASE_URL` (or `DB_PASSWORD` fallback) in `.env`.
+2. Apply Prisma migration after schema changes:
+
+```bash
+npm run prisma:migrate
+```
+
+### Toggle endpoint
+
+- Route: `PATCH /settings/features/:flag`
+- Auth: JWT required
+- Roles: `owner` or `manager`
+- Payload:
+
+```json
+{ "enabled": false }
+```
+
+### Feature gate middleware usage
+
+Use `requireFeature(flagName, prisma, redis)` in route middleware registration to block non-entitled features immediately.
+
+- On blocked access:
+
+```json
+{
+  "error": "FEATURE_NOT_ENABLED",
+  "feature": "multi_branch",
+  "upgrade_required": true
+}
+```
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
