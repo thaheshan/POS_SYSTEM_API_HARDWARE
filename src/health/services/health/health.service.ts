@@ -19,7 +19,11 @@ export class HealthService {
     const nestedBalance = this.isRecord(payload.data)
       ? payload.data.balance
       : undefined;
-    const rawBalance = nestedBalance ?? directBalance;
+    const nestedRemainingBalance = this.isRecord(payload.data)
+      ? payload.data.remaining_balance
+      : undefined;
+
+    const rawBalance = nestedRemainingBalance ?? nestedBalance ?? directBalance;
 
     const parsedBalance =
       typeof rawBalance === 'number'
