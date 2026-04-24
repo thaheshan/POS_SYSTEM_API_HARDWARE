@@ -41,94 +41,101 @@ export class SalesReturnsService {
   ) {
     this.logger.log(`Starting return creation for Invoice: ${dto.invoiceId}`);
 
-    return await this.prisma.$transaction(
-      async (tx) => {
-        const invoice = await tx.salesInvoice.findUnique({
-          where: { id: dto.invoiceId, tenantId: tenantId },
-          include: { items: true },
-        });
-        if (!invoice) {
-          this.logger.warn(`Invoice not found: ${dto.invoiceId}`);
-          throw new InvoiceNotFoundException(dto.invoiceId);
-        }
-        const itemsToReturn =
-          dto.items?.length > 0
-            ? dto.items.map((reqItem) => {
-                const dbItem = invoice.items.find(
-                  (i) => i.id === reqItem.invoiceItemId,
-                );
-                if (!dbItem)
-                  throw new InvoiceItemNotFoundException(reqItem.invoiceItemId);
-
-                // STRICT MAPPING: Force all master data from the database!
-                return {
-                  invoiceItemId: reqItem.invoiceItemId,
-                  productId: dbItem.productId,
-                  variantId: dbItem.variantId ?? undefined,
-                  warehouseId: dbItem.warehouseId,
-                  quantity: Number(reqItem.quantity),
-                  condition: reqItem.condition,
-                  unitPrice: Number(dbItem.unitPrice),
-                  lineTotal: Number(dbItem.unitPrice) * reqItem.quantity,
-                };
-              })
-            : invoice.items.map((item) => ({
-                invoiceItemId: item.id,
-                productId: item.productId,
-                variantId: item.variantId ?? undefined,
-                warehouseId: item.warehouseId,
-                quantity: Number(item.quantity),
-                condition: ReturnCondition.GOOD,
-                unitPrice: Number(item.unitPrice),
-                lineTotal: Number(item.lineTotal),
-              }));
-
-        const previousReturns = await tx.salesReturn.findMany({
-          where: {
-            invoiceId: dto.invoiceId,
-            status: { in: [ReturnStatus.PENDING, ReturnStatus.APPROVED] },
-          },
-          include: { items: true },
-        });
-
-        const alreadyReturnedMap = new Map<string, number>();
-        for (const prevReturn of previousReturns) {
-          for (const item of prevReturn.items) {
-            const currentQty = alreadyReturnedMap.get(item.invoiceItemId) || 0;
-            alreadyReturnedMap.set(
-              item.invoiceItemId,
-              currentQty + Number(item.quantity),
-            );
+    return await this.runWithRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const invoice = await tx.salesInvoice.findUnique({
+            where: { id: dto.invoiceId, tenantId: tenantId },
+            include: { items: true },
+          });
+          if (!invoice) {
+            this.logger.warn(`Invoice not found: ${dto.invoiceId}`);
+            throw new InvoiceNotFoundException(dto.invoiceId);
           }
-        }
-        this.validateReturnQuantities(
-          itemsToReturn,
-          invoice.items,
-          alreadyReturnedMap,
-        );
+          const itemsToReturn =
+            dto.items?.length > 0
+              ? dto.items.map((reqItem) => {
+                  const dbItem = invoice.items.find(
+                    (i) => i.id === reqItem.invoiceItemId,
+                  );
+                  if (!dbItem)
+                    throw new InvoiceItemNotFoundException(
+                      reqItem.invoiceItemId,
+                    );
 
-        const secureTotalAmount = itemsToReturn.reduce(
-          (sum, item) => sum + item.lineTotal,
-          0,
-        );
-        dto.totalAmount = secureTotalAmount;
-        const retNumber = await this.generateReturnNumber(tx, tenantId);
+                  // STRICT MAPPING: Force all master data from the database!
+                  return {
+                    invoiceItemId: reqItem.invoiceItemId,
+                    productId: dbItem.productId,
+                    variantId: dbItem.variantId ?? undefined,
+                    warehouseId: dbItem.warehouseId,
+                    quantity: Number(reqItem.quantity),
+                    condition: reqItem.condition,
+                    unitPrice: Number(dbItem.unitPrice),
+                    lineTotal: Number(dbItem.unitPrice) * reqItem.quantity,
+                  };
+                })
+              : invoice.items.map((item) => ({
+                  invoiceItemId: item.id,
+                  productId: item.productId,
+                  variantId: item.variantId ?? undefined,
+                  warehouseId: item.warehouseId,
+                  quantity: Number(item.quantity),
+                  condition: ReturnCondition.GOOD,
+                  unitPrice: Number(item.unitPrice),
+                  lineTotal: Number(item.lineTotal),
+                }));
 
-        dto.items = itemsToReturn;
-        const mappedData = this.mapReturnData(dto, retNumber, userId);
-        mappedData.tenantId = tenantId;
-        mappedData.branchId = invoice.branchId;
+          const previousReturns = await tx.salesReturn.findMany({
+            where: {
+              invoiceId: dto.invoiceId,
+              status: { in: [ReturnStatus.PENDING, ReturnStatus.APPROVED] },
+            },
+            include: { items: true },
+          });
 
-        const newReturn = await tx.salesReturn.create({
-          data: mappedData,
-          include: { items: true },
-        });
-        this.logger.log(`Return created successfully with ID: ${newReturn.id}`);
-        return newReturn;
-      },
-      {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      },
+          const alreadyReturnedMap = new Map<string, number>();
+          for (const prevReturn of previousReturns) {
+            for (const item of prevReturn.items) {
+              const currentQty =
+                alreadyReturnedMap.get(item.invoiceItemId) || 0;
+              alreadyReturnedMap.set(
+                item.invoiceItemId,
+                currentQty + Number(item.quantity),
+              );
+            }
+          }
+          this.validateReturnQuantities(
+            itemsToReturn,
+            invoice.items,
+            alreadyReturnedMap,
+          );
+
+          const secureTotalAmount = itemsToReturn.reduce(
+            (sum, item) => sum + item.lineTotal,
+            0,
+          );
+          dto.totalAmount = secureTotalAmount;
+          const retNumber = await this.generateReturnNumber(tx, tenantId);
+
+          dto.items = itemsToReturn;
+          const mappedData = this.mapReturnData(dto, retNumber, userId);
+          mappedData.tenantId = tenantId;
+          mappedData.branchId = invoice.branchId;
+
+          const newReturn = await tx.salesReturn.create({
+            data: mappedData,
+            include: { items: true },
+          });
+          this.logger.log(
+            `Return created successfully with ID: ${newReturn.id}`,
+          );
+          return newReturn;
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
+      ),
     );
   }
 
@@ -152,31 +159,33 @@ export class SalesReturnsService {
       throw new InvalidReturnStatusException(existingReturn.status);
     }
 
-    return await this.prisma.$transaction(
-      async (tx) => {
-        const salesReturn = await this.getReturnWithItems(
-          tx,
-          returnId,
-          tenantId,
-        );
-        this.validateReturnIsPending(salesReturn);
+    return await this.runWithRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const salesReturn = await this.getReturnWithItems(
+            tx,
+            returnId,
+            tenantId,
+          );
+          this.validateReturnIsPending(salesReturn);
 
-        await this.processReturnItems(tx, salesReturn, userId);
-        await this.processFinancials(tx, salesReturn);
+          await this.processReturnItems(tx, salesReturn, userId);
+          await this.processFinancials(tx, salesReturn);
 
-        const approvedReturn = await this.markReturnAsApproved(
-          tx,
-          returnId,
-          userId,
-          tenantId,
-        );
+          const approvedReturn = await this.markReturnAsApproved(
+            tx,
+            returnId,
+            userId,
+            tenantId,
+          );
 
-        await this.updateInvoiceStatus(tx, salesReturn.invoiceId);
-        return approvedReturn;
-      },
-      {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      },
+          await this.updateInvoiceStatus(tx, salesReturn.invoiceId);
+          return approvedReturn;
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
+      ),
     );
   }
 
@@ -286,6 +295,44 @@ export class SalesReturnsService {
   }
 
   // ======== Private Helper Methods ========
+  private isRetryableTransactionError(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+      return false;
+    }
+
+    // P2002: unique key conflict, P2034: transaction serialization conflict
+    return error.code === 'P2002' || error.code === 'P2034';
+  }
+
+  private async runWithRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries = 3,
+  ): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (!this.isRetryableTransactionError(error) || attempt >= maxRetries) {
+          throw error;
+        }
+
+        this.logger.warn(
+          `Retrying transaction after transient conflict (${attempt + 1}/${maxRetries})`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+      }
+    }
+  }
+
+  private async lockDocumentSequence(
+    tx: Prisma.TransactionClient,
+    key: string,
+  ): Promise<void> {
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${key}))
+    `;
+  }
+
   private validateReturnQuantities(
     returnItems: CreateSalesReturnDto['items'],
     invoiceItems: InvoiceItem[],
@@ -316,6 +363,8 @@ export class SalesReturnsService {
       }
     }
   }
+  // TODO: Temporary workaround for sequential numbering.
+  // TODO: Replace with ShopSettings-backed atomic counters per tenant/year.
   private async generateReturnNumber(
     tx: Prisma.TransactionClient,
     tenantId: string,
@@ -323,22 +372,26 @@ export class SalesReturnsService {
     const year = new Date().getFullYear();
     const searchPrefix = `RET-${year}-`;
 
-    const lastReturn = await tx.salesReturn.findFirst({
-      where: { tenantId, retNumber: { startsWith: searchPrefix } },
-      orderBy: { retNumber: 'desc' },
-    });
+    await this.lockDocumentSequence(tx, `RET:${tenantId}:${year}`);
+
+    const rows = await tx.$queryRaw<Array<{ value: string | null }>>`
+      SELECT MAX(ret_number)::text AS value
+      FROM sales_returns
+      WHERE tenant_id = ${tenantId}::uuid
+        AND ret_number LIKE ${searchPrefix + '%'}
+    `;
 
     let nextNumber = 1;
+    const lastReturn = rows[0]?.value;
     if (lastReturn) {
-      const parsedNumber = parseInt(
-        lastReturn.retNumber.replace(searchPrefix, ''),
-        10,
-      );
+      const parsedNumber = parseInt(lastReturn.replace(searchPrefix, ''), 10);
       if (!isNaN(parsedNumber)) nextNumber = parsedNumber + 1;
     }
     return `${searchPrefix}${nextNumber.toString().padStart(5, '0')}`;
   }
 
+  // TODO: Temporary workaround for sequential numbering.
+  // TODO: Replace with ShopSettings-backed atomic counters per tenant/year.
   private async generateCreditNoteNumber(
     tx: Prisma.TransactionClient,
     tenantId: string,
@@ -346,21 +399,24 @@ export class SalesReturnsService {
     const year = new Date().getFullYear();
     const searchPrefix = `CN-${year}-`;
 
-    const lastNote = await tx.creditNote.findFirst({
-      where: { tenantId, creditNoteNumber: { startsWith: searchPrefix } },
-      orderBy: { creditNoteNumber: 'desc' },
-    });
+    await this.lockDocumentSequence(tx, `CN:${tenantId}:${year}`);
+
+    const rows = await tx.$queryRaw<Array<{ value: string | null }>>`
+      SELECT MAX(credit_note_number)::text AS value
+      FROM credit_notes
+      WHERE tenant_id = ${tenantId}::uuid
+        AND credit_note_number LIKE ${searchPrefix + '%'}
+    `;
 
     let nextNumber = 1;
+    const lastNote = rows[0]?.value;
     if (lastNote) {
-      const parsedNumber = parseInt(
-        lastNote.creditNoteNumber.replace(searchPrefix, ''),
-        10,
-      );
+      const parsedNumber = parseInt(lastNote.replace(searchPrefix, ''), 10);
       if (!isNaN(parsedNumber)) nextNumber = parsedNumber + 1;
     }
     return `${searchPrefix}${nextNumber.toString().padStart(5, '0')}`;
   }
+
   private mapReturnData(
     dto: CreateSalesReturnDto,
     retNumber: string,
@@ -614,6 +670,8 @@ export class SalesReturnsService {
     salesReturn: SalesReturn,
   ) {
     const expiryDate = new Date();
+    // TODO: Refactor to fetch dynamic expiry days from ShopSettings config table once implemented.
+    // Currently hardcoded to 90 days as a temporary schema constraint workaround.
     expiryDate.setDate(expiryDate.getDate() + 90);
 
     const creditNoteNumber = await this.generateCreditNoteNumber(
