@@ -37,7 +37,8 @@ export class HealthService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject('TEMP_REDIS_CLIENT') private readonly redisClient: Redis, // Inject S3 and SMS services
+    // TODO: Replace with the global RedisModule once PR #14 is merged to resolve dependency conflicts.
+    @Inject('TEMP_REDIS_CLIENT') private readonly redisClient: Redis,
     // private readonly s3Service: S3Service,
     // private readonly smsService: SmsService,
     private readonly configService: ConfigService,
@@ -87,8 +88,8 @@ export class HealthService {
 
   private async checkStorage(): Promise<string> {
     try {
-      // Replace with S3 check: e.g., await this.s3Service.headBucket();
-      return Promise.resolve('ok');
+      // TODO: Implement actual S3 HeadBucket check (Ticket: XYZ-123)
+      return Promise.resolve('not_configured');
     } catch (error) {
       this.logger.error('Storage health check failed', (error as Error).stack);
       return 'failed';
@@ -129,7 +130,6 @@ export class HealthService {
       }
 
       const responseData: unknown = await response.json();
-
       const actualBalance = this.extractBalance(responseData);
 
       await this.redisClient.set(

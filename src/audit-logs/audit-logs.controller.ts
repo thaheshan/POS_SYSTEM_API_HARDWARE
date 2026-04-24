@@ -9,9 +9,10 @@ import {
 } from '@nestjs/common';
 import { AuditLogsService } from './audit-logs.service';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
-import type { AuthenticatedRequest } from 'src/common/interfaces/authenticated-request.interface';
+
 import type { GetAuditLogsDto } from './dto/get-audit-logs.dto';
 import type { Response } from 'express';
+import type { AuthRequest } from 'src/common/interfaces/auth-request.interface';
 
 @Controller('audit-logs')
 @UseGuards(JwtAuthGuard)
@@ -21,13 +22,13 @@ export class AuditLogsController {
 
   @Get()
   async getAuditLogs(
-    @Req() req: AuthenticatedRequest,
+    @Req() req: AuthRequest,
     @Query() queryDto: GetAuditLogsDto,
     @Res() res: Response,
   ) {
-    const tenantId = req.user?.tenant_id;
+    const tenantId = req.user.tenant_id;
     this.logger.log(
-      `User ${req.user?.user_id} requested audit logs with format: ${queryDto.exportFormat}`,
+      `User ${req.user?.sub} requested audit logs with format: ${queryDto.exportFormat}`,
     );
 
     const paginatedLogs = await this.auditLogsService.getLogs(
