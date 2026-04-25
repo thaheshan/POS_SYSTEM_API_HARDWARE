@@ -1,8 +1,22 @@
-import { BadRequestException, Controller, Post, Body, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { TwoFactorAuthService } from './two-factor-auth.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { Request } from 'express';
+import { AuthUser } from '../interfaces/auth-user.interface';
+
+interface AuthenticatedRequest extends Request {
+  user?: AuthUser;
+}
 
 @ApiTags('Two-Factor Authentication')
 @Controller('2fa')
@@ -32,7 +46,12 @@ export class TwoFactorAuthController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Setup TOTP for user' })
   @ApiResponse({ status: 200, description: 'TOTP secret and QR code URL' })
-  async setup(@Body('userId') userId: string) {
+  async setup(@Req() req: AuthenticatedRequest) {
+    const userId = req.user?.user_id;
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user not found');
+    }
+
     return this.twoFactorAuthService.setupTOTP(userId);
   }
 
@@ -40,8 +59,13 @@ export class TwoFactorAuthController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Verify TOTP token' })
   @ApiResponse({ status: 200, description: 'TOTP verified and enabled' })
-  async verify(@Body() body: { userId: string; token: string }) {
-    await this.twoFactorAuthService.verifyTOTP(body.userId, body.token);
+  async verify(@Req() req: AuthenticatedRequest, @Body() body: { token: string }) {
+    const userId = req.user?.user_id;
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user not found');
+    }
+
+    await this.twoFactorAuthService.verifyTOTP(userId, body.token);
     return { message: 'TOTP verified and enabled' };
   }
 

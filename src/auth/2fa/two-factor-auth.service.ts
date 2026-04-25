@@ -46,7 +46,9 @@ export class TwoFactorAuthService {
       tenant_id: user.tenant_id,
     };
 
-    const access_token = await this.jwtService.signAsync(payload);
+    const access_token = await this.jwtService.signAsync(payload, {
+      expiresIn: '30m',
+    });
     const refresh_token = await this.jwtService.signAsync(payload, {
       expiresIn: '7d',
     });

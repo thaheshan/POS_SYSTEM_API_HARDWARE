@@ -7,19 +7,19 @@ import { SetupTOTPService } from './setup';
 import { VerifyTOTPService } from './verify';
 import { SendSmsOtpService } from './sendOtp';
 import { VerifySmsOtpService } from './verifyOtp';
+import { TotpSecretCryptoService } from './totp-secret-crypto.service';
 import { UserModule } from '../../user/user.module';
+import { RedisModule } from '../../redis/redis.module';
 
 @Module({
   imports: [
     UserModule,
+    RedisModule,
     ConfigModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.getOrThrow<string>('JWT_SECRET'),
-        signOptions: {
-          expiresIn: '5m' as const,
-        },
+        secret: configService.getOrThrow<string>('JWT_2FA_SECRET'),
       }),
       inject: [ConfigService],
     }),
@@ -29,6 +29,7 @@ import { UserModule } from '../../user/user.module';
     TwoFactorAuthService,
     SetupTOTPService,
     VerifyTOTPService,
+    TotpSecretCryptoService,
     SendSmsOtpService,
     VerifySmsOtpService,
   ],

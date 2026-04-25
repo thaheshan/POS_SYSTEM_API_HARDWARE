@@ -1,21 +1,22 @@
 // POST /2fa/send-otp
-import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  InternalServerErrorException,
+  Inject,
+} from '@nestjs/common';
 import { randomInt } from 'crypto';
 import { UserService } from '../../user/user.service';
 import Redis from 'ioredis';
 import axios from 'axios';
+import { REDIS_CLIENT } from '../../redis/redis.module';
 
 @Injectable()
 export class SendSmsOtpService {
-  private redis: Redis;
-
-  constructor(private readonly userService: UserService) {
-    const redisUrl = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
-    this.redis = new Redis(redisUrl);
-    this.redis.on('error', (err) => {
-      console.error('Redis connection error (sendOtp):', err instanceof Error ? err.message : err);
-    });
-  }
+  constructor(
+    private readonly userService: UserService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+  ) {}
 
   async sendOtp(userId: string): Promise<void> {
     const user = await this.userService.findById(userId);
@@ -42,19 +43,26 @@ export class SendSmsOtpService {
     // Send OTP via Text.lk SMS gateway
     const apiUrl = 'https://app.text.lk/api/v3/sms/send';
 
-    await axios.post(
-      apiUrl,
-      {
-        recipient: user.phone_number,
-        sender_id: senderId,
-        message: `Your OTP is: ${otp}`,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
+    try {
+      await axios.post(
+        apiUrl,
+        {
+          recipient: user.phone_number,
+          sender_id: senderId,
+          message: `Your OTP is: ${otp}`,
         },
-      },
-    );
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 10000,
+        },
+      );
+    } catch (err) {
+      // OTP should not remain valid if delivery fails.
+      await this.redis.del(`otp:${userId}`);
+      throw new InternalServerErrorException('Unable to send OTP at the moment');
+    }
   }
 }

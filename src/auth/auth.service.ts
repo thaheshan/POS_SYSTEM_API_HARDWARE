@@ -6,8 +6,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import * as speakeasy from 'speakeasy';
 import { LoginDto } from '../system/dto/login.dto';
 import { UserService } from '../user/user.service';
 import { TwoFactorAuthService } from './2fa/two-factor-auth.service';
@@ -23,6 +23,7 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly twoFactorAuthService: TwoFactorAuthService,
+    private readonly configService: ConfigService,
   ) {}
 
   async login(loginDto: LoginDto) {
@@ -64,7 +65,10 @@ export class AuthService {
           sub: user.user_id,
           type: '2fa_pending',
         };
-        const temp_token = await this.jwtService.signAsync(tempPayload, { expiresIn: '5m' });
+        const temp_token = await this.jwtService.signAsync(tempPayload, {
+          expiresIn: '5m',
+          secret: this.configService.getOrThrow<string>('JWT_2FA_SECRET'),
+        });
 
         return {
           statusCode: 200,
@@ -122,7 +126,9 @@ export class AuthService {
   async completeLogin(tempToken: string, otp?: string, token?: string) {
     let payload;
     try {
-      payload = await this.jwtService.verifyAsync(tempToken);
+      payload = await this.jwtService.verifyAsync(tempToken, {
+        secret: this.configService.getOrThrow<string>('JWT_2FA_SECRET'),
+      });
     } catch (error) {
       throw new UnauthorizedException('Invalid or expired temp token');
     }
@@ -144,17 +150,7 @@ export class AuthService {
       if (!user.totp_secret) {
         throw new BadRequestException('TOTP is not configured for this user');
       }
-
-      const verified = speakeasy.totp.verify({
-        secret: user.totp_secret,
-        encoding: 'base32',
-        token,
-        window: 1,
-      });
-
-      if (!verified) {
-        throw new UnauthorizedException('Invalid TOTP token');
-      }
+      await this.twoFactorAuthService.verifyTOTP(payload.sub, token);
     } else if (otp) {
       await this.twoFactorAuthService.verifySmsOtp(payload.sub, otp);
     } else {
