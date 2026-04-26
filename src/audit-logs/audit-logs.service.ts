@@ -28,8 +28,19 @@ export class AuditLogsService {
     try {
       const whereClause = this.buildWhereClause(tenantId, dto);
 
-      const page = dto.page ? Number(dto.page) : 1;
-      const limit = dto.limit ? Number(dto.limit) : 50;
+      let page = Number(dto.page);
+      let limit = Number(dto.limit);
+
+      if (isNaN(page) || page <= 0) page = 1;
+      if (isNaN(limit) || limit <= 0) limit = 50;
+
+      if (dto.exportFormat === 'csv' && limit > 10000) {
+        this.logger.warn(
+          `User attempted to export ${limit} logs. Capping at 10,000.`,
+        );
+        limit = 10000;
+      }
+
       const skip = (page - 1) * limit;
 
       const [total, rawLogs] = await this.prisma.$transaction([

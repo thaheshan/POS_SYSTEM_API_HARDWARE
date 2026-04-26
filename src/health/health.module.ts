@@ -4,6 +4,7 @@ import { HealthService } from './services/health/health.service';
 import Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 
+// Temporary Redis provider to avoid circular dependency issues with the global RedisModule.
 const TemporaryRedisProvider = {
   provide: 'TEMP_REDIS_CLIENT',
   useFactory: (configService: ConfigService) => {
