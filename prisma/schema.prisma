@@ -141,7 +141,7 @@ model Shop {
   creditNotes           CreditNote[]
   generatedReports      GeneratedReport[] 
   suppliers             Supplier[]
-  auditLogs             AuditLog[]
+
   @@map("shops")
 }
 
@@ -667,7 +667,11 @@ model SupplierProduct {
 model AuditLog {
   id          String      @id @default(uuid()) @map("log_id") @db.Uuid
   tenantId    String      @map("tenant_id") @db.Uuid 
+  
+  /// Loose reference (no Foreign Key constraint) to ensure audit log immutability.
+  /// Do NOT add a relation here; logs must survive even if the User is hard-deleted.
   userId      String?     @map("user_id") @db.Uuid
+  
   action      AuditAction
   entityType  String      @map("entity_type") @db.VarChar(100)
   entityId    String      @map("entity_id") @db.VarChar(255)
@@ -676,8 +680,6 @@ model AuditLog {
   ipAddress   String?     @map("ip_address") @db.VarChar(45)
   userAgent   String?     @map("user_agent") @db.Text
   timestamp   DateTime    @default(now())
-
-  shop        Shop        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, entityType])
   @@index([tenantId, userId])

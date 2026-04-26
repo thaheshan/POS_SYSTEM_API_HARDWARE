@@ -15,6 +15,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 @Injectable()
 export class AuditLogsService {
   private readonly logger = new Logger(AuditLogsService.name);
+  private readonly maxCsvExportRows = 10000;
   constructor(private readonly prisma: PrismaService) {}
 
   async getLogs(
@@ -34,11 +35,11 @@ export class AuditLogsService {
       if (isNaN(page) || page <= 0) page = 1;
       if (isNaN(limit) || limit <= 0) limit = 50;
 
-      if (dto.exportFormat === 'csv' && limit > 10000) {
+      if (dto.exportFormat === 'csv' && limit > this.maxCsvExportRows) {
         this.logger.warn(
-          `User attempted to export ${limit} logs. Capping at 10,000.`,
+          `User attempted to export ${limit} logs. Capping at ${this.maxCsvExportRows}.`,
         );
-        limit = 10000;
+        limit = this.maxCsvExportRows;
       }
 
       const skip = (page - 1) * limit;
