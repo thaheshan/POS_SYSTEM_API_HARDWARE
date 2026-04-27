@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { InvoiceStatus, SalesInvoice, SalesInvoiceItem } from '@prisma/client';
 
@@ -13,7 +13,7 @@ export class StockCronService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron('0 */5 * * * *') // Every 5 minutes
   async releaseAbandonedReservations() {
     this.logger.log('CRON: Starting abandoned reservation cleanup...');
 
@@ -42,30 +42,37 @@ export class StockCronService {
       );
 
       for (const invoice of abandonedInvoices) {
-        await this.prisma.$transaction(async (tx) => {
-          for (const item of invoice.items) {
-            await tx.stock.updateMany({
-              where: {
-                productId: item.productId,
-                warehouseId: item.warehouseId,
-                variantId: item.variantId,
-              },
-              data: {
-                reservedQuantity: {
-                  decrement: item.quantity,
+        try {
+          await this.prisma.$transaction(async (tx) => {
+            for (const item of invoice.items) {
+              await tx.stock.updateMany({
+                where: {
+                  productId: item.productId,
+                  warehouseId: item.warehouseId,
+                  variantId: item.variantId,
                 },
-              },
+                data: {
+                  reservedQuantity: {
+                    decrement: item.quantity,
+                  },
+                },
+              });
+            }
+            await tx.salesInvoice.update({
+              where: { id: invoice.id },
+              data: { status: InvoiceStatus.CANCELLED },
             });
-          }
-          await tx.salesInvoice.update({
-            where: { id: invoice.id },
-            data: { status: InvoiceStatus.CANCELLED },
-          });
 
-          this.logger.log(
-            `CRON: Successfully released stock for Invoice ID: ${invoice.id}`,
+            this.logger.log(
+              `CRON: Successfully released stock for Invoice ID: ${invoice.id}`,
+            );
+          });
+        } catch (error) {
+          this.logger.error(
+            `CRON: Failed to release stock for Invoice ID: ${invoice.id}`,
+            error,
           );
-        });
+        }
       }
 
       this.logger.log('CRON: Abandoned reservation cleanup complete.');

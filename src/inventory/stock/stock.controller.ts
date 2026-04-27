@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
@@ -59,7 +60,7 @@ export class StockController {
     description: 'Returns warehouse-specific stock for the product.',
   })
   async getProductStock(
-    @Param('id') productId: string,
+    @Param('id', ParseUUIDPipe) productId: string,
     @Req() req: AuthenticatedRequest,
   ) {
     return this.stockService.getProductStock(productId, req.user.tenant_id);
