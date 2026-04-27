@@ -20,14 +20,12 @@ import { DashboardModule } from './dashboard/dashboard.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    ThrottlerModule.forRoot({
-      throttlers: [
-        {
-          ttl: 60,
-          limit: 10000,
-        },
-      ],
-    }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000, // 60 seconds in milliseconds
+        limit: 1000, // 1000 requests per minute as baseline
+      },
+    ]),
     PrismaModule,
     SystemModule,
     ProductModule,
