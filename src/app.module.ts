@@ -7,6 +7,7 @@ import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { HealthModule } from './health/health.module';
+import { RedisModule } from './cache/redis.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { HealthModule } from './health/health.module';
     SystemModule,
     AuthModule,
     AuditLogsModule,
+    RedisModule,
     HealthModule,
   ],
   controllers: [AppController],

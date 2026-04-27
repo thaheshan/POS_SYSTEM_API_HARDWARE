@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Redis } from 'ioredis';
 import { SystemHealthResponse } from 'src/health/interfaces/health-response.interface';
 import { PrismaService } from 'src/prisma/prisma.service';
+import type { CacheClient } from 'src/cache/cache-client.interface';
 
 @Injectable()
 export class HealthService {
@@ -37,8 +37,8 @@ export class HealthService {
 
   constructor(
     private readonly prisma: PrismaService,
-    // TODO: Replace with the global RedisModule once PR #14 is merged to resolve dependency conflicts.
-    @Inject('TEMP_REDIS_CLIENT') private readonly redisClient: Redis,
+    // check the health of Redis setup as PR #6. Once we have a robust Redis here We need to change ths helth check as that setup
+    @Inject('REDIS_CLIENT') private readonly redisClient: CacheClient,
     // private readonly s3Service: S3Service,
     // private readonly smsService: SmsService,
     private readonly configService: ConfigService,
@@ -77,6 +77,13 @@ export class HealthService {
 
   private async checkRedis(): Promise<string> {
     try {
+      if (!this.redisClient.ping) {
+        this.logger.warn(
+          'Redis ping is not available (fallback cache client).',
+        );
+        return 'not_configured';
+      }
+
       const response = await this.redisClient.ping();
       this.logger.debug(`Redis ping response: ${response}`);
       return response === 'PONG' ? 'ok' : 'failed';
@@ -85,7 +92,6 @@ export class HealthService {
       return 'failed';
     }
   }
-
   private async checkStorage(): Promise<string> {
     try {
       // TODO: Implement actual S3 HeadBucket check (Ticket: XYZ-123)
