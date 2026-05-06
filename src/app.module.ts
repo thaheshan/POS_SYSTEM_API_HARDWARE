@@ -9,6 +9,8 @@ import { BrandsModule } from './brands/brands.module';
 import { UnitsModule } from './units/units.module';
 import redisConfig from './config/redis.config';
 import { AuthModule } from './auth/auth.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { AuthModule } from './auth/auth.module';
     BrandsModule,
     UnitsModule,
     AuthModule,
+    InventoryModule,
+    ScheduleModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [AppService],
