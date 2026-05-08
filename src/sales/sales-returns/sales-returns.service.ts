@@ -670,7 +670,7 @@ export class SalesReturnsService {
     salesReturn: SalesReturn,
   ) {
     const expiryDate = new Date();
-    // TODO: Refactor to fetch dynamic expiry days from ShopSettings config table once implemented.
+    // TODO: Move credit-note expiry days to ShopSettings (POS-1234); keep 90-day default until settings table is available.
     // Currently hardcoded to 90 days as a temporary schema constraint workaround.
     expiryDate.setDate(expiryDate.getDate() + 90);
 
