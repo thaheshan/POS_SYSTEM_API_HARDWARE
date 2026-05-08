@@ -72,7 +72,7 @@ async function main() {
 
   // 5. Create a Category
   const category = await prisma.category.create({
-    data: { tenantId: shop.id, name: 'Electronics' },
+    data: { tenantId: shop.id, categoryName: 'Electronics' },
   });
 
   // 6. Create a Test Product
