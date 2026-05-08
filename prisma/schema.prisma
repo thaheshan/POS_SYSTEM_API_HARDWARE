@@ -22,14 +22,9 @@ model User {
   account_locked_until  DateTime?
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
-
-  @@map("users")
-}
-
-// Password Reset Fields
-  password_reset_token  String?
-  password_reset_expiry DateTime?
-  password_reset_used   Boolean   @default(false)
+  password_reset_token  String?   
+  password_reset_expiry DateTime? 
+  password_reset_used   Boolean   @default(false) 
 
   @@map("users")
 }
