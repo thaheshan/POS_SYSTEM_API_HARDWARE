@@ -31,6 +31,7 @@ async function main() {
   console.log(`✅ Shop created: ${shop.id}`);
 
   // 2. Create a User
+  // (Using a pre-calculated bcrypt hash for the password "password123")
   const user = await prisma.user.create({
     data: {
       tenant_id: shop.id,
@@ -70,7 +71,7 @@ async function main() {
   });
   console.log(`✅ Warehouse created: ${warehouse.id}`);
 
-  // 5. Create a Category
+  // 5. Create a Category & Brand
   const category = await prisma.category.create({
     data: { tenantId: shop.id, name: 'Electronics' },
   });
@@ -82,7 +83,7 @@ async function main() {
       categoryId: category.id,
       name: 'Wireless Mouse',
       sku: 'WM-001',
-      sellingPrice: 100.0,
+      sellingPrice: 25.99,
       minimumStockLevel: 10,
       taxCategory: TaxCategory.STANDARD_VAT,
     },

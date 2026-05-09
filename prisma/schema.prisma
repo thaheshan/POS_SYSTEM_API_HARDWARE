@@ -165,15 +165,14 @@ model Branch {
   @@map("branches")
 }
 
-// ================= CATALOG MODELS =================
 model Category {
-  id          String   @id @default(uuid()) @map("category_id") @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  name        String   @map("category_name") @db.VarChar(200)
-  description String?  @db.Text
-  isActive    Boolean  @default(true) @map("is_active")
+  id          String    @id @default(uuid()) @map("category_id") @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  name        String    @map("category_name") @db.VarChar(200)
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
   
-  shop        Shop     @relation(fields: [tenantId], references: [id])
+  shop        Shop      @relation(fields: [tenantId], references: [id])
   products    Product[]
 
   @@map("categories")
@@ -226,15 +225,15 @@ model Product {
   warrantyMonths      Int?           @map("warranty_months")
   hasVariants         Boolean        @default(false) @map("has_variants")
   isActive            Boolean        @default(true) @map("is_active")
-  createdBy           String?        @map("created_by")
+  createdBy           String?        @map("created_by") // No @db.Uuid
   createdAt           DateTime       @default(now()) @map("created_at")
   updatedAt           DateTime       @updatedAt @map("updated_at")
 
-  shop                Shop               @relation(fields: [tenantId], references: [id])
-  category            Category           @relation(fields: [categoryId], references: [id])
-  brand               Brand?             @relation(fields: [brandId], references: [id])
-  unit                Unit?              @relation(fields: [unitId], references: [id])
-  creator             User?              @relation("ProductCreatedBy", fields: [createdBy], references: [user_id])
+  shop                Shop           @relation(fields: [tenantId], references: [id])
+  category            Category       @relation(fields: [categoryId], references: [id])
+  brand               Brand?         @relation(fields: [brandId], references: [id])
+  unit                Unit?          @relation(fields: [unitId], references: [id])
+  creator             User?          @relation("ProductCreatedBy", fields: [createdBy], references: [user_id])
   variants            ProductVariant[]
   images              ProductImage[]
   stocks              Stock[]
@@ -265,8 +264,8 @@ model ProductVariant {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  product           Product            @relation(fields: [productId], references: [id])
-  shop              Shop               @relation(fields: [tenantId], references: [id])
+  product           Product  @relation(fields: [productId], references: [id])
+  shop              Shop     @relation(fields: [tenantId], references: [id])
   stocks            Stock[]
   stockMovements    StockMovement[]
   grnItems          GrnItem[]
