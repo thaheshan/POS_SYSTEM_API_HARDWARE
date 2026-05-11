@@ -1,4 +1,4 @@
-import { HttpException, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { GetWeeklyReportDto } from './dto/get-weekly-report.dto';
 import {
@@ -11,14 +11,14 @@ import {
   TaxUpdate,
   WeeklyAnalyticsReport,
 } from './interfaces/analytics-report.interface';
-import { ReportGenerationException } from './exceptions/Analatics_report_generatio.exception';
-import { Logger } from '@nestjs/common';
+import { ReportGenerationException } from './exceptions/Analytics_report_generation.exception';
 import { GetMonthlyReportDto } from './dto/get-monthly-report.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class AnalyticsService {
   private readonly logger = new Logger(AnalyticsService.name);
+  private readonly reportCacheTtlHours = 24;
   constructor(private readonly prisma: PrismaService) {}
 
   public async generateWeeklyReport(
@@ -86,6 +86,7 @@ export class AnalyticsService {
           reportType: 'WEEKLY',
           startDate: startDate,
           endDate: endDate,
+          expiresAt: this.buildReportExpiryDate(),
           data: report as unknown as Prisma.InputJsonValue,
         },
       });
@@ -94,15 +95,7 @@ export class AnalyticsService {
       );
       return report;
     } catch (error: unknown) {
-      this.logger.error('Error generating weekly analytics report', {
-        tenantId,
-        error,
-      });
-
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new ReportGenerationException('generateWeeklyReport', error);
+      this.handleReportError('Weekly Report Aggregation', error);
     }
   }
 
@@ -172,6 +165,7 @@ export class AnalyticsService {
           reportType: 'MONTHLY',
           startDate: startDate,
           endDate: endDate,
+          expiresAt: this.buildReportExpiryDate(),
           data: report as unknown as Prisma.InputJsonValue,
         },
       });
@@ -182,28 +176,92 @@ export class AnalyticsService {
 
       return report;
     } catch (error: unknown) {
-      const stackTrace = error instanceof Error ? error.stack : undefined;
-      this.logger.error(
-        `Monthly report generation failed for tenant: ${tenantId}`,
-        stackTrace,
-      );
-      throw new ReportGenerationException('Monthly Report Aggregation', error);
+      this.handleReportError('Monthly Report Aggregation', error);
     }
   }
 
   public async getLiveReorderList(
     tenantId: string,
-    // response: Response,
   ): Promise<ReorderSuggestion[]> {
     this.logger.log(`Fetching live reorder list for tenant: ${tenantId}`);
     try {
       return await this.getReorderSuggestions(tenantId);
     } catch (error: unknown) {
-      this.logger.error(
-        `Failed to fetch live reorder list for tenant: ${tenantId}`,
-      );
-      throw new ReportGenerationException('Live Reorder List', error);
+      this.handleReportError('Live Reorder List', error);
     }
+  }
+
+  private isPrismaClientValidationError(
+    error: unknown,
+  ): error is { name: string } {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'name' in error &&
+      typeof (error as { name: string }).name === 'string' &&
+      (error as { name: string }).name === 'PrismaClientValidationError'
+    );
+  }
+
+  private handleReportError(operation: string, error: unknown): never {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    this.logger.error(`${operation} failed: ${message}`, stack);
+
+    if (error instanceof HttpException) {
+      throw error;
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.CONFLICT,
+            message: `${operation} failed due to a write conflict`,
+            error: 'Conflict',
+            details: error.meta,
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      if (['P2020', 'P2021', 'P2025'].includes(error.code)) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.BAD_REQUEST,
+            message: `Invalid request for ${operation}`,
+            error: 'Bad Request',
+            details: error.message,
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      throw new ReportGenerationException(
+        operation,
+        new Error(`Database error ${error.code}: ${error.message}`),
+      );
+    }
+
+    if (this.isPrismaClientValidationError(error)) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: `Invalid query for ${operation}`,
+          error: 'Bad Request',
+          details: message,
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    throw new ReportGenerationException(operation, error);
+  }
+
+  private buildReportExpiryDate(): Date {
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + this.reportCacheTtlHours);
+    return expiresAt;
   }
 
   private async getDailyRevenue(

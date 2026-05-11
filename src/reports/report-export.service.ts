@@ -1,11 +1,12 @@
 import { Injectable, StreamableFile } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import {
   MonthlyAnalyticsReport,
   WeeklyAnalyticsReport,
 } from './interfaces/analytics-report.interface';
 import { Parser } from 'json2csv';
 import PDFDocument from 'pdfkit';
+
 export type AnalyticsReport = WeeklyAnalyticsReport | MonthlyAnalyticsReport;
 
 const CSV_FORMULA_PREFIXES = ['=', '+', '-', '@'];
@@ -76,45 +77,57 @@ export class ReportExportService {
 
     const doc = new PDFDocument({ margin: 50 });
 
-    doc.fontSize(20).text(reportTitle, { align: 'center' });
-    doc.moveDown();
-    doc
-      .fontSize(10)
-      .fillColor('gray')
-      .text(`Generated on (UTC): ${new Date().toISOString()}`, {
-        align: 'center',
-      });
+    try {
+      doc.fontSize(20).text(reportTitle, { align: 'center' });
+      doc.moveDown();
 
-    doc.fillColor('black');
-    doc.moveDown(2);
+      doc
+        .fontSize(10)
+        .fillColor('gray')
+        .text(`Generated on (UTC): ${new Date().toISOString()}`, {
+          align: 'center',
+        });
 
-    if (data.taxUpdate) {
-      doc
-        .fontSize(14)
-        .fillColor('black')
-        .text('Financial Snapshot', { underline: true });
-      doc.moveDown(0.5);
-      doc
-        .fontSize(12)
-        .text(`Period Profit: $${data.taxUpdate.periodProfit}`)
-        .text(`YTD Income: $${data.taxUpdate.ytdIncome}`)
-        .text(`Estimated Tax: $${data.taxUpdate.estimatedTaxLiability}`);
+      doc.fillColor('black');
       doc.moveDown(2);
-    }
 
-    if (data.reorderSuggestions && data.reorderSuggestions.length > 0) {
-      doc.fontSize(14).text('Inventory Alerts', { underline: true });
-      doc.moveDown(0.5);
-      data.reorderSuggestions.forEach((item) => {
+      if (data.taxUpdate) {
         doc
-          .fontSize(10)
-          .text(
-            `- ${item.productName}: ${item.availableQuantity} left (Min: ${item.minimumStockLevel})`,
-          );
-      });
-    }
+          .fontSize(14)
+          .fillColor('black')
+          .text('Financial Snapshot', { underline: true });
+        doc.moveDown(0.5);
+        doc
+          .fontSize(12)
+          .text(`Period Profit: $${data.taxUpdate.periodProfit}`)
+          .text(`YTD Income: $${data.taxUpdate.ytdIncome}`)
+          .text(`Estimated Tax: $${data.taxUpdate.estimatedTaxLiability}`);
+        doc.moveDown(2);
+      }
 
-    doc.end();
-    return new StreamableFile(doc);
+      if (data.reorderSuggestions && data.reorderSuggestions.length > 0) {
+        doc.fontSize(14).text('Inventory Alerts', { underline: true });
+        doc.moveDown(0.5);
+
+        data.reorderSuggestions.forEach((item) => {
+          doc
+            .fontSize(10)
+            .text(
+              `- ${item.productName}: ${item.availableQuantity} left (Min: ${item.minimumStockLevel})`,
+            );
+        });
+      }
+
+      return new StreamableFile(doc);
+    } catch (error) {
+      if (!doc.destroyed) {
+        doc.destroy(error instanceof Error ? error : undefined);
+      }
+      throw error;
+    } finally {
+      if (!doc.destroyed) {
+        doc.end();
+      }
+    }
   }
 }

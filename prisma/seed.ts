@@ -104,10 +104,6 @@ async function main() {
   });
   console.log(`✅ Initial Stock record created: ${stock.id}`);
 
-  // ==========================================
-  // NEW CODE: Setup Return Scenario Data
-  // ==========================================
-
   // 8. Create a Customer with an Outstanding Balance
   const customer = await prisma.customer.create({
     data: {
