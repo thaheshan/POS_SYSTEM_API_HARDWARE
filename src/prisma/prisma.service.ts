@@ -23,7 +23,7 @@ export class PrismaService
       host: 'aws-1-ap-south-1.pooler.supabase.com',
       port: 5432,
       database: 'postgres',
-      user: 'postgres.cudihrchqrvmrtjbbobq',
+      user: process.env.DB_User || 'postgres.wftdcqgueuelimbakhhx',
       password: process.env.DB_PASSWORD,
       ssl: { rejectUnauthorized: false },
       keepAlive: true,
