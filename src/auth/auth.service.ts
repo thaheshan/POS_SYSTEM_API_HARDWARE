@@ -1,6 +1,5 @@
 import {
   Injectable,
-  NotFoundException,
   UnauthorizedException,
   InternalServerErrorException,
   HttpException,
@@ -46,7 +45,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new NotFoundException('Email not registered');
+    return { message: 'If this email is registered, a reset code will be sent.' };
     }
 
     const code = crypto.randomInt(100000, 999999).toString();
@@ -111,7 +110,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new NotFoundException('Email not registered');
+    throw new UnauthorizedException('Invalid or expired verification code');
     }
 
     if (!user.password_reset_token || !user.password_reset_expiry) {
