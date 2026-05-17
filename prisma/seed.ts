@@ -1,4 +1,10 @@
-import { PrismaClient, TaxCategory } from '@prisma/client';
+import {
+  PrismaClient,
+  TaxCategory,
+  SaleType,
+  PaymentStatus,
+  InvoiceStatus,
+} from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as dotenv from 'dotenv';
@@ -52,7 +58,6 @@ async function main() {
       managerId: user.user_id,
     },
   });
-
   console.log(`✅ Branch created: ${branch.id}`);
 
   // 4. Create a Warehouse
@@ -85,31 +90,82 @@ async function main() {
   });
   console.log(`✅ Product created: ${product.id}`);
 
+  // 7. Create Initial Stock
   const stock = await prisma.stock.create({
     data: {
       tenantId: shop.id,
       productId: product.id,
       warehouseId: warehouse.id,
       branchId: branch.id,
-      quantity: 0,
+      quantity: 10,
       reservedQuantity: 0,
       damagedQuantity: 0,
     },
   });
   console.log(`✅ Initial Stock record created: ${stock.id}`);
 
+  // 8. Create a Customer with an Outstanding Balance
+  const customer = await prisma.customer.create({
+    data: {
+      tenantId: shop.id,
+      name: 'John Doe',
+      phone: '555-0199',
+      outstandingBalance: 110.0,
+      totalPurchases: 110.0,
+    },
+  });
+  console.log(`✅ Customer created: ${customer.id}`);
+
+  // 9. Create a Credit Sales Invoice
+  const invoice = await prisma.salesInvoice.create({
+    data: {
+      tenantId: shop.id,
+      branchId: branch.id,
+      // customerId: customer.id,
+      cashierId: user.user_id,
+      invoiceNumber: 'INV-TEST-001',
+      invoiceDate: new Date(), // Required by schema
+      invoiceTime: new Date(), // Required by schema
+      saleType: SaleType.CREDIT, // Enum required
+      paymentStatus: PaymentStatus.UNPAID, // Enum required
+      status: InvoiceStatus.COMPLETED, // Enum required
+      subtotal: 100.0,
+      taxAmount: 10.0,
+      totalAmount: 110.0,
+    },
+  });
+  console.log(`✅ Credit Invoice created: ${invoice.id}`);
+
+  // 10. Create the Sales Invoice Item
+  const invoiceItem = await prisma.salesInvoiceItem.create({
+    data: {
+      invoiceId: invoice.id,
+      productId: product.id,
+      warehouseId: warehouse.id, // Required by schema
+      quantity: 1,
+      unitPrice: 100.0,
+      lineTotal: 100.0,
+    },
+  });
+  console.log(`✅ Invoice Item created: ${invoiceItem.id}`);
+
+  // ==========================================
+
   console.log('\n🎉 Seeding complete! Copy these UUIDs for Postman:');
   console.log('--------------------------------------------------');
-  console.log(`Tenant ID:    ${shop.id}`);
-  console.log(`User ID:      ${user.user_id}`);
-  console.log(`Warehouse ID: ${warehouse.id}`);
-  console.log(`Product ID:   ${product.id}`);
+  console.log(`"tenantId":      "${shop.id}"`);
+  console.log(`"branchId":      "${branch.id}"`);
+  console.log(`"customerId":    "${customer.id}"`);
+  console.log(`"invoiceId":     "${invoice.id}"`);
+  console.log(`"invoiceItemId": "${invoiceItem.id}"`);
+  console.log(`"productId":     "${product.id}"`);
+  console.log(`"warehouseId":   "${warehouse.id}"`);
 }
 
 main()
   .then(async () => {
     await prisma.$disconnect();
-    console.log('🌱 Seeding completed!');
+    console.log('🌱 Seeding process finished gracefully.');
   })
   .catch(async (e) => {
     console.error(e);
