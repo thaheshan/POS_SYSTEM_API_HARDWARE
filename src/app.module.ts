@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
+import { ReportsModule } from './reports/reports.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { StaffModule } from './staff/staff.module';
@@ -17,6 +18,7 @@ import { StaffModule } from './staff/staff.module';
     PrismaModule,
     SystemModule,
     AuthModule,
+    ReportsModule,
     InventoryModule,
     ScheduleModule.forRoot(),
     StaffModule,
