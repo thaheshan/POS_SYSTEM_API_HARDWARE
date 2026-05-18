@@ -160,7 +160,6 @@ async function main() {
 
   console.log('Product ready: ' + product.id);
 
-  // 7) Stock (composite unique: productId + variantId + warehouseId)
   // 7) Stock (avoid upsert on composite key with nullable variantId)
   let stock = await prisma.stock.findFirst({
     where: {
