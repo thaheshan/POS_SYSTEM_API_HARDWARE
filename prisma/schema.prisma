@@ -177,7 +177,7 @@ model Shop {
 
 model User {
   user_id               String    @id @default(uuid())
-  tenant_id             String
+  tenant_id             String    @db.Uuid
   email                 String    @unique
   password_hash         String
   first_name            String?
