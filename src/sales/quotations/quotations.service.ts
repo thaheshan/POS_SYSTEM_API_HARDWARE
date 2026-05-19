@@ -160,10 +160,8 @@ export class QuotationsService {
       cursor?: string;
     } = {},
   ): Promise<QuotationsPaginatedResponse> {
-    // Auto-expire quotations before fetching
-    await this.autoExpireQuotations(tenantId);
-
     // Try cache first (using filters as part of cache key)
+    // Note: Expiry check happens at conversion time, not on read (HTTP idempotency)
     const cacheKey = this.getQuotationsListCacheKey(tenantId, filters);
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -229,10 +227,7 @@ export class QuotationsService {
     tenantId: string,
     id: string,
   ): Promise<QuotationResponse> {
-    // Auto-expire before fetching
-    await this.autoExpireQuotations(tenantId);
-
-    // Try cache first
+    // Try cache first (no state mutations on GET - HTTP idempotency preserved)
     const cacheKey = this.getQuotationCacheKey(tenantId, id);
     const cached = await this.redis.get(cacheKey);
     if (cached) {

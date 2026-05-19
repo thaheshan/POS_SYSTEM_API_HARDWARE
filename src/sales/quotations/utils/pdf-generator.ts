@@ -1,4 +1,4 @@
-import PDFDocument from 'pdfkit';
+import { BasePDFGenerator } from '../../../common/pdf/base-pdf-generator';
 import { QuotationResponse } from '../dto/quotation.dto';
 
 export interface ShopInfo {
@@ -16,6 +16,127 @@ export interface PDFGeneratorOptions {
 }
 
 /**
+ * Quotation PDF Generator
+ * Extends BasePDFGenerator for consistent styling and structure
+ * Specific to quotation document generation
+ */
+class QuotationPDFGenerator extends BasePDFGenerator {
+  private quotation: QuotationResponse;
+  private options: PDFGeneratorOptions;
+
+  constructor(quotation: QuotationResponse, options: PDFGeneratorOptions) {
+    super();
+    this.quotation = quotation;
+    this.options = options;
+  }
+
+  async generate(): Promise<Buffer> {
+    // Render header with shop info
+    this.renderHeader(this.options.shopInfo);
+
+    // Render document title
+    this.renderSectionTitle('QUOTATION');
+
+    // Render quotation details
+    this.renderKeyValue('Quotation #', this.quotation.quotationNumber);
+    this.renderKeyValue('Date', this.quotation.quotationDate);
+    if (this.quotation.validUntil) {
+      this.renderKeyValue('Valid Until', this.quotation.validUntil);
+    }
+    this.doc.moveDown(this.SPACING.ITEM_GAP);
+
+    // Render customer details
+    this.renderSectionTitle('BILL TO');
+    if (this.quotation.customerName) {
+      this.doc.text(this.quotation.customerName);
+    }
+    if (this.quotation.customerPhone) {
+      this.doc.text(`Phone: ${this.quotation.customerPhone}`);
+    }
+    this.doc.moveDown(this.SPACING.SECTION_GAP);
+
+    // Render items table
+    this.renderItemsTable();
+
+    // Render financial summary
+    this.renderFinancialSummary();
+
+    // Render footer
+    this.renderFooter(this.options.termsConditions);
+
+    return this.getBuffer();
+  }
+
+  /**
+   * Render items table with quotation-specific columns
+   */
+  private renderItemsTable(): void {
+    const columns = [
+      {
+        header: 'Item',
+        key: 'productName',
+        width: 150,
+        align: 'left' as const,
+      },
+      { header: 'Qty', key: 'quantity', width: 60, align: 'right' as const },
+      {
+        header: 'Unit Price',
+        key: 'unitPrice',
+        width: 80,
+        align: 'right' as const,
+      },
+      {
+        header: 'Discount%',
+        key: 'discountPercentage',
+        width: 70,
+        align: 'right' as const,
+      },
+      { header: 'Tax%', key: 'taxRate', width: 60, align: 'right' as const },
+      { header: 'Total', key: 'lineTotal', width: 80, align: 'right' as const },
+    ];
+
+    const rows = this.quotation.items.map((item) => ({
+      productName: item.productName || '',
+      quantity: item.quantity || '0',
+      unitPrice: this.formatCurrency(item.unitPrice || '0'),
+      discountPercentage: item.discountPercentage
+        ? `${item.discountPercentage}%`
+        : '-',
+      taxRate: item.taxRate ? `${item.taxRate}%` : '-',
+      lineTotal: this.formatCurrency(item.lineTotal || '0'),
+    }));
+
+    this.renderTable(columns, rows);
+  }
+
+  /**
+   * Render financial summary (subtotal, discount, tax, total)
+   */
+  private renderFinancialSummary(): void {
+    this.renderSummary([
+      {
+        label: 'Subtotal',
+        value: this.formatCurrency(this.quotation.subtotal || '0'),
+      },
+      {
+        label: 'Discount',
+        value: this.formatCurrency(this.quotation.discountAmount || '0'),
+      },
+      {
+        label: 'Tax',
+        value: this.formatCurrency(this.quotation.taxAmount || '0'),
+      },
+      {
+        label: 'TOTAL',
+        value: this.formatCurrency(this.quotation.totalAmount || '0'),
+        isBold: true,
+        isTotal: true,
+      },
+    ]);
+  }
+}
+
+/**
  * Generate Quotation PDF with pdfkit
  * Creates a professional PDF with shop header, quotation details, items, and totals
  * @param quotation Quotation data to render
@@ -26,158 +147,8 @@ export async function generateQuotationPdf(
   quotation: QuotationResponse,
   options: PDFGeneratorOptions,
 ): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({
-        size: 'A4',
-        margin: 50,
-        bufferPages: true,
-      });
-
-      const chunks: Buffer[] = [];
-
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => {
-        resolve(Buffer.concat(chunks));
-      });
-      doc.on('error', reject);
-
-      // ===== HEADER WITH SHOP INFO =====
-      doc
-        .fontSize(20)
-        .font('Helvetica-Bold')
-        .text(options.shopInfo.shopName, { align: 'left' });
-      doc.fontSize(10).font('Helvetica').moveDown(0.3);
-
-      if (options.shopInfo.address) {
-        doc.text(options.shopInfo.address, { align: 'left' });
-      }
-      if (options.shopInfo.phone) {
-        doc.text(`Phone: ${options.shopInfo.phone}`, { align: 'left' });
-      }
-      if (options.shopInfo.email) {
-        doc.text(`Email: ${options.shopInfo.email}`, { align: 'left' });
-      }
-      if (options.shopInfo.vatRegistrationNumber) {
-        doc.text(
-          `VAT Registration: ${options.shopInfo.vatRegistrationNumber}`,
-          { align: 'left' },
-        );
-      }
-
-      doc.moveDown(0.5);
-      doc.fontSize(14).font('Helvetica-Bold').text('QUOTATION');
-      doc.moveDown(0.3);
-
-      // ===== QUOTATION DETAILS =====
-      doc
-        .fontSize(10)
-        .font('Helvetica')
-        .text(`Quotation #: ${quotation.quotationNumber}`);
-      doc.text(`Date: ${quotation.quotationDate}`);
-      if (quotation.validUntil) {
-        doc.text(`Valid Until: ${quotation.validUntil}`);
-      }
-      doc.moveDown(0.5);
-
-      // ===== CUSTOMER DETAILS =====
-      doc.fontSize(11).font('Helvetica-Bold').text('BILL TO:');
-      doc.fontSize(10).font('Helvetica');
-      if (quotation.customerName) {
-        doc.text(quotation.customerName);
-      }
-      if (quotation.customerPhone) {
-        doc.text(`Phone: ${quotation.customerPhone}`);
-      }
-      doc.moveDown(0.5);
-
-      // ===== ITEMS TABLE =====
-      const colX = { item: 50, qty: 280, unitPrice: 340, discount: 410, tax: 450, total: 500 };
-      const headerY = doc.y;
-
-      // Table header
-      doc.fontSize(10).font('Helvetica-Bold');
-      doc.text('Item', colX.item, headerY);
-      doc.text('Qty', colX.qty, headerY);
-      doc.text('Unit Price', colX.unitPrice, headerY);
-      doc.text('Discount%', colX.discount, headerY);
-      doc.text('Tax%', colX.tax, headerY);
-      doc.text('Total', colX.total, headerY);
-
-      // Horizontal line
-      doc
-        .moveTo(colX.item, headerY + 15)
-        .lineTo(550, headerY + 15)
-        .stroke();
-
-      doc.moveDown(1.2);
-      doc.fontSize(9).font('Helvetica');
-
-      // Items rows
-      let itemY = doc.y;
-      quotation.items.forEach((item) => {
-        const itemName = (item.productName || '').substring(0, 25);
-        doc.text(itemName, colX.item, itemY);
-        doc.text(item.quantity || '0', colX.qty, itemY);
-        doc.text(item.unitPrice || '0.00', colX.unitPrice, itemY);
-        doc.text(item.discountPercentage || '0', colX.discount, itemY);
-        doc.text(item.taxRate || '0', colX.tax, itemY);
-        doc.text(item.lineTotal || '0.00', colX.total, itemY);
-        itemY += 20;
-      });
-
-      // ===== SUMMARY SECTION =====
-      doc.moveDown(1);
-      const summaryX = 350;
-      const summaryY = doc.y;
-
-      doc.fontSize(10).font('Helvetica');
-      doc.text('Subtotal:', summaryX, summaryY);
-      doc.text(quotation.subtotal || '0.00', summaryX + 120, summaryY, { align: 'right' });
-
-      doc.text('Discount:', summaryX, summaryY + 20);
-      doc.text(quotation.discountAmount || '0.00', summaryX + 120, summaryY + 20, {
-        align: 'right',
-      });
-
-      doc.text('Tax:', summaryX, summaryY + 40);
-      doc.text(quotation.taxAmount || '0.00', summaryX + 120, summaryY + 40, {
-        align: 'right',
-      });
-
-      // Total with border
-      doc
-        .rect(summaryX - 10, summaryY + 55, 180, 25)
-        .stroke();
-      doc.fontSize(12).font('Helvetica-Bold');
-      doc.text('TOTAL:', summaryX, summaryY + 63);
-      doc.text(quotation.totalAmount || '0.00', summaryX + 120, summaryY + 63, {
-        align: 'right',
-      });
-
-      // ===== FOOTER WITH TERMS & CONDITIONS =====
-      doc.moveDown(2);
-      doc.fontSize(9).font('Helvetica');
-      doc.text('─'.repeat(85), { align: 'center' });
-      doc.moveDown(0.3);
-
-      if (options.termsConditions) {
-        doc.fontSize(9).font('Helvetica-Bold').text('TERMS & CONDITIONS:');
-        doc.fontSize(8).font('Helvetica').text(options.termsConditions, {
-          align: 'left',
-          width: 450,
-        });
-      }
-
-      doc.fontSize(8).text(`Generated on ${new Date().toLocaleString()}`, {
-        align: 'center',
-      });
-
-      doc.end();
-    } catch (error) {
-      reject(error);
-    }
-  });
+  const generator = new QuotationPDFGenerator(quotation, options);
+  return generator.generate();
 }
 
 /**

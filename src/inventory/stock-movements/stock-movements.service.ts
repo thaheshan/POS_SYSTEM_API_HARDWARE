@@ -206,6 +206,8 @@ export class StockMovementsService {
    * Creates 2 movements (one for each warehouse) when a stock transfer is approved
    * Movement 1: from warehouse (negative quantity)
    * Movement 2: to warehouse (positive quantity)
+   * CRITICAL: All writes (2 movements + 2 stock updates) are atomic
+   * If process crashes mid-transfer, all writes rollback together
    */
   async recordTransferMovements(
     transferId: string,
@@ -219,7 +221,7 @@ export class StockMovementsService {
     tenantId: string,
     createdBy: string,
   ): Promise<void> {
-    // Use transaction to ensure both movements are created atomically
+    // ATOMIC TRANSACTION: All 4 writes (2 movements + 2 stock updates) succeed or fail together
     await this.prisma.$transaction(async (tx) => {
       for (const item of items) {
         const quantity = new Prisma.Decimal(item.quantity);
@@ -254,7 +256,7 @@ export class StockMovementsService {
           toStockBefore?.quantity || new Prisma.Decimal(0);
         const toQuantityAfter = toQuantityBefore.plus(quantity);
 
-        // Movement 1: Stock leaving from warehouse
+        // WRITE 1: Movement record for source warehouse (audit trail)
         await tx.stockMovement.create({
           data: {
             tenantId,
@@ -271,7 +273,7 @@ export class StockMovementsService {
           },
         });
 
-        // Movement 2: Stock arriving at destination warehouse
+        // WRITE 2: Movement record for destination warehouse (audit trail)
         await tx.stockMovement.create({
           data: {
             tenantId,
@@ -287,6 +289,65 @@ export class StockMovementsService {
             createdBy,
           },
         });
+
+        // WRITE 3: Update stock at source warehouse (decrease)
+        // Find existing stock record
+        const fromStock = await tx.stock.findFirst({
+          where: {
+            tenantId,
+            productId: item.productId,
+            variantId: item.variantId || undefined,
+            warehouseId: fromWarehouseId,
+          },
+        });
+
+        if (fromStock) {
+          // Update existing
+          await tx.stock.update({
+            where: { id: fromStock.id },
+            data: { quantity: fromQuantityAfter },
+          });
+        } else {
+          // Create new
+          await tx.stock.create({
+            data: {
+              tenantId,
+              productId: item.productId,
+              variantId: item.variantId || undefined,
+              warehouseId: fromWarehouseId,
+              quantity: fromQuantityAfter,
+            },
+          });
+        }
+
+        // WRITE 4: Update stock at destination warehouse (increase)
+        const toStock = await tx.stock.findFirst({
+          where: {
+            tenantId,
+            productId: item.productId,
+            variantId: item.variantId || undefined,
+            warehouseId: toWarehouseId,
+          },
+        });
+
+        if (toStock) {
+          // Update existing
+          await tx.stock.update({
+            where: { id: toStock.id },
+            data: { quantity: toQuantityAfter },
+          });
+        } else {
+          // Create new
+          await tx.stock.create({
+            data: {
+              tenantId,
+              productId: item.productId,
+              variantId: item.variantId || undefined,
+              warehouseId: toWarehouseId,
+              quantity: toQuantityAfter,
+            },
+          });
+        }
       }
     });
     // Invalidate movements cache for this tenant after recording transfers

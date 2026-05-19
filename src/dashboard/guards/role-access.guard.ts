@@ -25,15 +25,26 @@ interface AuthRequest extends Request {
 }
 
 /**
- * Guard to enforce role-based access control on dashboard endpoints with database verification
- * SECURITY: Verifies user role against database on every request, ensuring role changes
- * (promotions/demotions/terminations) are immediately enforced without waiting for JWT expiration
+ * DEPRECATED: Use JwtAuthGuard with @SetMetadata('roles', [...]) instead
  *
- * Usage: @UseGuards(RoleAccessGuard) in controller with
- * @SetMetadata('roles', [UserRole.owner]) on the handler
+ * This guard has been consolidated into JwtAuthGuard for security and maintainability.
+ * Having two separate guards (JwtAuthGuard + RoleAccessGuard) creates risk of:
+ * - Guard bypass: Accidentally applying only JwtAuthGuard without RoleAccessGuard
+ * - Inconsistent security: Different role verification logic in two places
+ * - Privilege escalation: Client could bypass RoleAccessGuard if only JwtAuthGuard used
  *
- * Performance: Adds ~1-3ms overhead per request (single DB query)
- * Tradeoff: Maximum security vs minimal performance impact - acceptable for dashboard endpoints
+ * MIGRATION GUIDE:
+ * Before:
+ *   @UseGuards(JwtAuthGuard, RoleAccessGuard)
+ *   @SetMetadata('roles', [UserRole.owner])
+ *   getOwnerDashboard() { ... }
+ *
+ * After:
+ *   @UseGuards(JwtAuthGuard)
+ *   @SetMetadata('roles', [UserRole.owner])
+ *   getOwnerDashboard() { ... }
+ *
+ * JwtAuthGuard now handles both JWT validation AND role checking automatically.
  */
 @Injectable()
 export class RoleAccessGuard implements CanActivate {
@@ -42,6 +53,10 @@ export class RoleAccessGuard implements CanActivate {
   constructor(private prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    this.logger.warn(
+      'DEPRECATED: RoleAccessGuard is deprecated. Use JwtAuthGuard with @SetMetadata("roles", [...]) instead.',
+    );
+
     const request = context.switchToHttp().getRequest<AuthRequest>();
     const requiredRoles = Reflect.getMetadata(
       'roles',

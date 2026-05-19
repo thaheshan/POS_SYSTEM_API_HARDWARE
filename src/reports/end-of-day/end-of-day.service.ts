@@ -41,11 +41,35 @@ export class EndOfDayService {
       throw new BadRequestException('Report date cannot be in the future');
     }
 
-    // Check cache first
+    // IDEMPOTENCY: Check cache first (fast)
     const cacheKey = this.getCacheKey(tenantId, date, branch_id);
     const cached = await this.redis.get(cacheKey);
     if (cached) {
       return JSON.parse(cached);
+    }
+
+    // IDEMPOTENCY: Check database for existing report (before expensive calculation)
+    // If report already exists (from previous request), return it directly
+    const existingReport = await this.prisma.reportsGenerated.findUnique({
+      where: {
+        unique_report_per_day: {
+          tenantId,
+          branchId: branch_id,
+          reportDate,
+        },
+      },
+    });
+
+    if (existingReport) {
+      const response = this.mapReportToDto(existingReport);
+      // Refresh cache
+      await this.redis.set(
+        cacheKey,
+        JSON.stringify(response),
+        'EX',
+        this.reportCacheTtlSeconds,
+      );
+      return response;
     }
 
     try {
@@ -100,41 +124,10 @@ export class EndOfDayService {
         updated_at: new Date().toISOString(),
       };
 
-      // Save to database (upsert)
-      const stored = await this.prisma.reportsGenerated.upsert({
-        where: {
-          unique_report_per_day: {
-            tenantId,
-            branchId: branch_id,
-            reportDate,
-          },
-        },
-        update: {
-          totalRevenue: this.toDecimal(response.total_revenue),
-          totalTransactions: response.total_transactions,
-          averageBill: this.toDecimal(response.average_bill),
-          largestTransaction: this.toDecimal(response.largest_transaction),
-          smallestTransaction: this.toDecimal(response.smallest_transaction),
-          cashAmount: this.toDecimal(paymentBreakdown.cash),
-          cardAmount: this.toDecimal(paymentBreakdown.card),
-          creditAmount: this.toDecimal(paymentBreakdown.credit),
-          paymentPercentages: paymentBreakdown.percentages,
-          cogs: this.toDecimal(profit.cogs),
-          grossProfit: this.toDecimal(profit.grossProfit),
-          operatingExpenses: this.toDecimal(operating_expenses),
-          netProfit: this.toDecimal(profit.netProfit),
-          vatCollected: this.toDecimal(vat.collected),
-          vatPaid: this.toDecimal(vat.paid),
-          netVat: this.toDecimal(vat.net),
-          categoryRankings: JSON.parse(JSON.stringify(categoryRankings)),
-          staffPerformance: JSON.parse(JSON.stringify(staffPerformance)),
-          lowStockItems: JSON.parse(JSON.stringify(inventoryAlerts.low_stock)),
-          outOfStockItems: JSON.parse(
-            JSON.stringify(inventoryAlerts.out_of_stock),
-          ),
-          updatedAt: new Date(),
-        },
-        create: {
+      // IDEMPOTENCY: Create (don't update) - ensures single authoritative version
+      // If another process created it between our check and this create, let it fail and retry
+      const stored = await this.prisma.reportsGenerated.create({
+        data: {
           tenantId,
           branchId: branch_id,
           reportDate,
@@ -175,6 +168,28 @@ export class EndOfDayService {
 
       return response;
     } catch (error) {
+      // If create fails due to unique constraint, fetch existing and return it
+      if (error.code === 'P2002') {
+        const existing = await this.prisma.reportsGenerated.findUnique({
+          where: {
+            unique_report_per_day: {
+              tenantId,
+              branchId: branch_id,
+              reportDate,
+            },
+          },
+        });
+        if (existing) {
+          const response = this.mapReportToDto(existing);
+          await this.redis.set(
+            cacheKey,
+            JSON.stringify(response),
+            'EX',
+            this.reportCacheTtlSeconds,
+          );
+          return response;
+        }
+      }
       this.logger.error(`Failed to generate end-of-day report: ${error}`);
       throw error;
     }
@@ -621,5 +636,42 @@ export class EndOfDayService {
   private toDecimal(value: number): any {
     // Prisma Decimal will handle conversion
     return value;
+  }
+
+  /**
+   * Map database report record to DTO
+   * Used for idempotency: when returning cached/existing reports
+   */
+  private mapReportToDto(report: any): ReportResponseDto {
+    return {
+      id: report.id,
+      tenant_id: report.tenantId,
+      branch_id: report.branchId,
+      report_date: report.reportDate.toISOString().split('T')[0],
+      total_revenue: Number(report.totalRevenue),
+      total_transactions: report.totalTransactions,
+      average_bill: Number(report.averageBill),
+      largest_transaction: Number(report.largestTransaction),
+      smallest_transaction: Number(report.smallestTransaction),
+      payment_breakdown: {
+        cash: Number(report.cashAmount),
+        card: Number(report.cardAmount),
+        credit: Number(report.creditAmount),
+        percentages: report.paymentPercentages,
+      },
+      cogs: Number(report.cogs),
+      gross_profit: Number(report.grossProfit),
+      operating_expenses: Number(report.operatingExpenses),
+      net_profit: Number(report.netProfit),
+      vat_collected: Number(report.vatCollected),
+      vat_paid: Number(report.vatPaid),
+      net_vat: Number(report.netVat),
+      category_rankings: report.categoryRankings,
+      staff_performance: report.staffPerformance,
+      low_stock_items: report.lowStockItems,
+      out_of_stock_items: report.outOfStockItems,
+      created_at: report.createdAt.toISOString(),
+      updated_at: report.updatedAt.toISOString(),
+    };
   }
 }
