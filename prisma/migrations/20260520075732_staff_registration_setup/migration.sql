@@ -5,7 +5,7 @@
 
 */
 -- CreateEnum
-CREATE TYPE "Role" AS ENUM ('owner', 'manager', 'cashier', 'store_keeper', 'accountant', 'technician');
+CREATE TYPE "Role" AS ENUM ('OWNER', 'MANAGER', 'CASHIER', 'STORE_KEEPER', 'ACCOUNTANT', 'TECHNICIAN');
 
 -- CreateEnum
 CREATE TYPE "StaffStatus" AS ENUM ('PENDING_APPROVAL', 'APPROVED', 'REJECTED');
@@ -15,5 +15,4 @@ ALTER TABLE "users" ADD COLUMN     "phone" VARCHAR(20),
 ADD COLUMN     "status" "StaffStatus" NOT NULL DEFAULT 'PENDING_APPROVAL',
 ADD COLUMN     "two_factor_secret" VARCHAR(255),
 DROP COLUMN "role",
-ADD COLUMN     "role" "Role" NOT NULL DEFAULT 'cashier',
-ALTER COLUMN "is_active" SET DEFAULT false;
+ADD COLUMN     "role" "Role" NOT NULL DEFAULT 'CASHIER';

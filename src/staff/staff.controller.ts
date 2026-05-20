@@ -11,7 +11,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { StaffService } from './staff.service';
-import { NotifyOwnerDto } from './dto/notify-owner.dto';
 import { RegisterStaffDto } from './dto/register-staff.dto';
 import { ApproveStaffDto } from './dto/approve-staff.dto';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
@@ -27,16 +26,14 @@ export class StaffController {
     return this.staffService.registerStaff(registerStaffDto);
   }
 
-  @Post('notify-owner')
-  @HttpCode(HttpStatus.OK)
-  async notifyOwner(@Body() notifyOwnerDto: NotifyOwnerDto) {
-    return this.staffService.notifyShopOwner(notifyOwnerDto);
-  }
-
+  @UseGuards(JwtAuthGuard)
   @Get('status/:staff_id')
   @HttpCode(HttpStatus.OK)
-  async getStaffStatus(@Param('staff_id', ParseUUIDPipe) staffId: string) {
-    return this.staffService.getStaffStatus(staffId);
+  async getStaffStatus(
+    @Param('staff_id', ParseUUIDPipe) staffId: string,
+    @Req() req: AuthRequest,
+  ) {
+    return this.staffService.getStaffStatus(staffId, req.user.sub);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -43,12 +43,12 @@ enum InvoiceStatus {
 }
 
 enum Role {
-  OWNER        @map("owner")
-  MANAGER      @map("manager")
-  CASHIER      @map("cashier")
-  STORE_KEEPER @map("store_keeper")
-  ACCOUNTANT   @map("accountant")
-  TECHNICIAN   @map("technician")
+  OWNER
+  MANAGER
+  CASHIER
+  STORE_KEEPER
+  ACCOUNTANT
+  TECHNICIAN
 }
 
 enum StaffStatus {
@@ -100,7 +100,7 @@ model User {
   role          Role    @default(CASHIER)
 
   status      StaffStatus @default(PENDING_APPROVAL)
-  is_active   Boolean     @default(false)
+  is_active   Boolean     @default(true)
   is_verified Boolean     @default(false)
 
   two_factor_enabled    Boolean   @default(false)

@@ -2,16 +2,12 @@ import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RegisterStaffDto } from './dto/register-staff.dto';
 import * as bcrypt from 'bcrypt';
-import { Prisma, StaffStatus } from '@prisma/client';
-import { NotifyOwnerDto } from './dto/notify-owner.dto';
+import { Prisma } from '@prisma/client';
 import {
   ApproveStaffException,
   GetStaffStatusException,
   InvalidStaffActionException,
-  InvalidStaffShopAssociationException,
-  NotifyShopOwnerException,
   RegisterStaffException,
-  ShopOwnerNotFoundException,
   StaffAlreadyExistsException,
   StaffNotFoundException,
   UnauthorizedStaffApprovalException,
@@ -46,13 +42,31 @@ export class StaffService {
           phone: normalizedPhone,
           role: dto.role,
           tenant_id: dto.shop_id,
+          status: 'PENDING_APPROVAL',
+          is_active: false,
         },
       });
 
-      this.logger.log(
-        `Successfully registered staff member: ${newStaff.user_id}`,
-      );
+      const shopOwner = await this.prisma.user.findFirst({
+        where: { tenant_id: dto.shop_id, role: 'OWNER', is_active: true },
+      });
 
+      if (shopOwner) {
+        /* TODO: Implement actual notification logic here
+        await this.prisma.notification.create({
+          data: {
+            user_id: shopOwner.user_id,
+            title: 'New Staff Request',
+            message: `${firstName} requested access to your shop.`,
+            type: 'STAFF_APPROVAL',
+            is_read: false,
+          },
+        });
+        */
+        this.logger.log(
+          `[IN-APP NOTIFICATION] Sent to Owner ${shopOwner.user_id} for Staff ${newStaff.user_id}`,
+        );
+      }
       return {
         message: 'Staff account created, pending Shop Owner approval',
         staff_id: newStaff.user_id,
@@ -79,77 +93,11 @@ export class StaffService {
     }
   }
 
-  async notifyShopOwner(dto: NotifyOwnerDto) {
-    this.logger.log(
-      `Processing in-app notification to owner for Shop: ${dto.shop_id} regarding Staff: ${dto.staff_id}`,
-    );
+  async getStaffStatus(staffId: string, requestedById: string) {
     try {
-      const staffMember = await this.prisma.user.findFirst({
-        where: {
-          user_id: dto.staff_id,
-          tenant_id: dto.shop_id,
-          status: StaffStatus.PENDING_APPROVAL,
-        },
-        include: {
-          shop: true,
-        },
-      });
-
-      if (!staffMember) {
-        this.logger.warn(
-          `Notification failed: Invalid staff (${dto.staff_id}) or shop (${dto.shop_id}).`,
-        );
-        throw new InvalidStaffShopAssociationException();
+      if (staffId !== requestedById) {
+        throw new UnauthorizedStaffApprovalException();
       }
-
-      const shopOwner = await this.prisma.user.findFirst({
-        where: {
-          tenant_id: dto.shop_id,
-          role: 'OWNER',
-          is_active: true,
-        },
-      });
-
-      if (!shopOwner) {
-        this.logger.error(
-          `Cannot find active owner for Shop ID: ${dto.shop_id}`,
-        );
-        throw new ShopOwnerNotFoundException();
-      }
-
-      // TODO: Implement actual notification logic here (e.g., create a notification record in the database, send an email, etc.)
-      /*
-      await this.prisma.notification.create({
-        data: {
-          user_id: shopOwner.user_id,
-          title: 'New Staff Request',
-          message: `${staffMember.first_name} requested access to ${staffMember.shop.name}.`,
-          type: 'STAFF_APPROVAL',
-          is_read: false
-        }
-      });
-      */
-
-      this.logger.log(
-        `Notification sent to Shop Owner (${shopOwner.user_id}) about Staff (${staffMember.user_id}).`,
-      );
-      return { message: 'Shop owner notified about staff registration.' };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(
-        `Failed to notify shop owner for Staff ID: ${dto.staff_id}. Error: ${errorMessage}`,
-      );
-      throw new NotifyShopOwnerException();
-    }
-  }
-
-  async getStaffStatus(staffId: string) {
-    try {
       const staff = await this.prisma.user.findUnique({
         where: { user_id: staffId },
         select: {
@@ -166,7 +114,9 @@ export class StaffService {
 
       return staff;
     } catch (error: unknown) {
-      if (error instanceof StaffNotFoundException) throw error;
+      if (error instanceof HttpException) {
+        throw error;
+      }
       this.logger.error(`Failed to retrieve status for staff ${staffId}`);
       throw new GetStaffStatusException();
     }
@@ -186,7 +136,8 @@ export class StaffService {
         throw new InvalidStaffActionException('Invalid staff ID provided.');
       }
 
-      if (staffMember.status !== StaffStatus.PENDING_APPROVAL) {
+      if (staffMember.status !== 'PENDING_APPROVAL') {
+        // ESLint fix: Use string literal
         throw new InvalidStaffActionException(
           `Staff account is already ${staffMember.status}`,
         );
@@ -208,8 +159,7 @@ export class StaffService {
         throw new UnauthorizedStaffApprovalException();
       }
 
-      const newStatus: StaffStatus =
-        dto.action === 'approve' ? StaffStatus.APPROVED : StaffStatus.REJECTED;
+      const newStatus = dto.action === 'approve' ? 'APPROVED' : 'REJECTED';
       const isActiveAndVerified = dto.action === 'approve';
 
       const updated = await this.prisma.user.update({
@@ -227,12 +177,15 @@ export class StaffService {
         },
       });
 
+      const actionPastTense =
+        dto.action === 'approve' ? 'approved' : 'rejected';
+
       this.logger.log(
         `[IN-APP NOTIFICATION] To Staff ${dto.staff_id}: Your account has been ${String(newStatus).toLowerCase()}.`,
       );
 
       return {
-        message: `Staff account ${dto.action}d successfully`,
+        message: `Staff account ${actionPastTense} successfully`,
         status: updated,
       };
     } catch (error: unknown) {
@@ -245,6 +198,7 @@ export class StaffService {
       this.logger.error(
         `Failed to process approval for ${dto.staff_id}: ${errorMessage}`,
       );
+
       throw new ApproveStaffException();
     }
   }
