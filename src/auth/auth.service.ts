@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   InternalServerErrorException,
+  BadRequestException,
   HttpException,
   HttpStatus,
   Logger,
@@ -9,10 +10,12 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 import { LoginDto } from '../system/dto/login.dto';
 import { UserService } from '../user/user.service';
+import { TwoFactorAuthService } from './2fa/two-factor-auth.service';
 import { InactiveUserException } from './exceptions/inactive-user.exception';
 import { UnverifiedUserException } from './exceptions/unverified-user.exception';
 import { LockedAccountException } from './exceptions/locked-account.exception';
@@ -31,6 +34,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
+    private readonly twoFactorAuthService: TwoFactorAuthService,
+    private readonly configService: ConfigService,
   ) {}
 
   async requestPasswordReset(email: string): Promise<{ message: string }> {
@@ -45,7 +50,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-    return { message: 'If this email is registered, a reset code will be sent.' };
+      return { message: 'If this email is registered, a reset code will be sent.' };
     }
 
     const code = crypto.randomInt(100000, 999999).toString();
@@ -110,7 +115,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-    throw new UnauthorizedException('Invalid or expired verification code');
+      throw new UnauthorizedException('Invalid or expired verification code');
     }
 
     if (!user.password_reset_token || !user.password_reset_expiry) {
@@ -188,6 +193,29 @@ export class AuthService {
 
       await this.userService.resetLoginState(email);
 
+      // Check if 2FA is enabled
+      if (user.two_factor_enabled) {
+        // Generate temp token for 2FA
+        const tempPayload = {
+          sub: user.user_id,
+          type: '2fa_pending',
+        };
+        const temp_token = await this.jwtService.signAsync(tempPayload, {
+          expiresIn: '5m',
+          secret: this.configService.getOrThrow<string>('JWT_2FA_SECRET'),
+        });
+
+        return {
+          statusCode: 200,
+          message: '2FA required',
+          data: {
+            requires_2fa: true,
+            method: user.totp_secret ? 'totp' : 'sms',
+            temp_token,
+          },
+        };
+      }
+
       const payload = {
         sub: user.user_id,
         email: user.email,
@@ -196,12 +224,14 @@ export class AuthService {
       };
 
       const access_token = await this.jwtService.signAsync(payload);
+      const refresh_token = await this.jwtService.signAsync(payload, { expiresIn: '7d' });
 
       return {
         statusCode: 200,
         message: 'Login successful',
         data: {
           access_token,
+          refresh_token,
           token_type: 'Bearer',
           user: {
             user_id: user.user_id,
@@ -226,5 +256,47 @@ export class AuthService {
       this.logger.error('Login failed', error);
       throw new InternalServerErrorException('Failed to process login');
     }
+  }
+
+  async completeLogin(tempToken: string, otp?: string, token?: string) {
+    let payload;
+    try {
+      payload = await this.jwtService.verifyAsync(tempToken, {
+        secret: this.configService.getOrThrow<string>('JWT_2FA_SECRET'),
+      });
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired temp token');
+    }
+
+    if (payload.type !== '2fa_pending') {
+      throw new UnauthorizedException('Invalid temp token');
+    }
+
+    const user = await this.userService.findById(payload.sub);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (!user.two_factor_enabled) {
+      throw new UnauthorizedException('2FA is not enabled for this user');
+    }
+
+    if (token) {
+      if (!user.totp_secret) {
+        throw new BadRequestException('TOTP is not configured for this user');
+      }
+      await this.twoFactorAuthService.verifyTOTP(payload.sub, token);
+    } else if (otp) {
+      await this.twoFactorAuthService.verifySmsOtp(payload.sub, otp);
+    } else {
+      throw new BadRequestException('OTP or TOTP token is required');
+    }
+
+    const loginTokens = await this.twoFactorAuthService.issueLoginTokens(payload.sub);
+    return {
+      statusCode: 200,
+      message: 'Login successful',
+      data: loginTokens,
+    };
   }
 }
