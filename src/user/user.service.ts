@@ -17,6 +17,9 @@ export class UserService {
         is_active: true,
         is_verified: true,
         tenant_id: true,
+        totp_secret: true,
+        phone_number: true,
+        two_factor_enabled: true,
       },
     }) as Promise<AuthUser | null>;
   }
@@ -36,6 +39,9 @@ export class UserService {
         tenant_id: true,
         failed_login_attempts: true,
         account_locked_until: true,
+        totp_secret: true,
+        phone_number: true,
+        two_factor_enabled: true,
       },
     }) as Promise<UserRecord | null>;
   }
@@ -55,6 +61,13 @@ export class UserService {
         account_locked_until: null,
         last_login: new Date(),
       },
+    });
+  }
+
+  async updateUser(userId: string, data: Partial<any>): Promise<void> {
+    await this.prisma.db.user.update({
+      where: { user_id: userId },
+      data,
     });
   }
 }
