@@ -20,12 +20,15 @@ export class PrismaService
 
   constructor() {
     const pool = new Pool({
-      host: 'aws-1-ap-southeast-1.pooler.supabase.com',
+      host: 'aws-1-ap-south-1.pooler.supabase.com',
       port: 5432,
       database: 'postgres',
       user: process.env.DB_User || 'postgres.wftdcqgueuelimbakhhx',
       password: process.env.DB_PASSWORD,
       ssl: { rejectUnauthorized: false },
+      keepAlive: true,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
     });
 
     const adapter = new PrismaPg(pool);
