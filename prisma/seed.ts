@@ -40,7 +40,7 @@ async function main() {
         '$2a$12$uZp7qIeGIQ.8/w7/.MeNfuZf4R8ljI4EDhDXZ/3edF1St52cP6mg2', // password123
       first_name: 'System',
       last_name: 'Admin',
-      role: 'admin',
+      role: 'OWNER',
       is_active: true,
       is_verified: true,
     },

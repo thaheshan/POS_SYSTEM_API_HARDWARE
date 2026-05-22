@@ -15,6 +15,7 @@ import { SalesModule } from './sales/sales.module';
 import { ReportsModule } from './reports/reports.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { StaffModule } from './staff/staff.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     ReportsModule,
     DashboardModule,
     ScheduleModule.forRoot(),
+    StaffModule,
   ],
   controllers: [AppController],
   providers: [

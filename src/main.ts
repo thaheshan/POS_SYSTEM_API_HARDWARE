@@ -24,6 +24,12 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  app.enableCors({
+    origin: 'http://localhost:3001',
+    credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Authorization, Accept',
+  });
 
   app.useGlobalInterceptors(
     new ResponseInterceptor(),
