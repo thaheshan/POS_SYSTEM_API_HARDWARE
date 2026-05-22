@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { ReportsModule } from './reports/reports.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { StaffModule } from './staff/staff.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     ReportsModule,
     InventoryModule,
     ScheduleModule.forRoot(),
+    StaffModule,
   ],
   controllers: [AppController],
   providers: [AppService],

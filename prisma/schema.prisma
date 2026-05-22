@@ -42,6 +42,21 @@ enum InvoiceStatus {
   RETURNED
 }
 
+enum Role {
+  OWNER
+  MANAGER
+  CASHIER
+  STORE_KEEPER
+  ACCOUNTANT
+  TECHNICIAN
+}
+
+enum StaffStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
 enum ReturnStatus {
   PENDING
   APPROVED
@@ -75,15 +90,19 @@ enum ReportType {
 
 // ================= CORE / TENANT MODELS =================
 model User {
-  user_id               String    @id @default(uuid())
-  tenant_id             String    @db.Uuid
-  email                 String    @unique
-  password_hash         String
-  first_name            String?
-  last_name             String?
-  role                  String    @default("cashier")
-  is_active             Boolean   @default(true)
-  is_verified           Boolean   @default(false)
+  user_id       String  @id @default(uuid())
+  tenant_id     String  @db.Uuid
+  email         String  @unique
+  password_hash String
+  first_name    String?
+  last_name     String?
+  phone         String? @db.VarChar(20)
+  role          Role    @default(CASHIER)
+
+  status      StaffStatus @default(PENDING_APPROVAL)
+  is_active   Boolean     @default(true)
+  is_verified Boolean     @default(false)
+
   two_factor_enabled    Boolean   @default(false)
   totp_secret           String?
   phone_number          String?
@@ -92,9 +111,9 @@ model User {
   account_locked_until  DateTime?
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
-  password_reset_token  String?   
-  password_reset_expiry DateTime? 
-  password_reset_used   Boolean   @default(false) 
+  password_reset_token  String?
+  password_reset_expiry DateTime?
+  password_reset_used   Boolean   @default(false)
 
   shop              Shop                @relation(fields: [tenant_id], references: [id])
   managedBranches   Branch[]            @relation("BranchManager")
@@ -231,7 +250,7 @@ model Product {
   warrantyMonths      Int?         @map("warranty_months")
   hasVariants         Boolean      @default(false) @map("has_variants")
   isActive            Boolean      @default(true) @map("is_active")
-  createdBy           String?      @map("created_by") // No @db.Uuid
+  createdBy           String?      @map("created_by")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
 
@@ -588,9 +607,9 @@ model GeneratedReport {
   reportType ReportType @map("report_type")
   startDate  DateTime   @map("start_date") @db.Date
   endDate    DateTime   @map("end_date") @db.Date
-  data       Json // Stores the generated JSON analytics payload
+  data       Json
   createdAt  DateTime   @default(now()) @map("created_at")
-  expiresAt  DateTime   @map("expires_at") // TTL for cache invalidation
+  expiresAt  DateTime   @map("expires_at")
 
   shop Shop @relation(fields: [tenantId], references: [id])
 
