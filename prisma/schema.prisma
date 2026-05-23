@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
 }
 
 // ================= ENUMS =================
@@ -43,6 +43,7 @@ enum InvoiceStatus {
 }
 
 enum Role {
+  SUPER_ADMIN
   OWNER
   MANAGER
   CASHIER
@@ -88,10 +89,15 @@ enum ReportType {
   MONTHLY
 }
 
+enum SubscriptionPaymentStatus {
+  PENDING
+  PAID
+}
+
 // ================= CORE / TENANT MODELS =================
 model User {
   user_id       String  @id @default(uuid())
-  tenant_id     String  @db.Uuid
+  tenant_id     String? @db.Uuid
   email         String  @unique
   password_hash String
   first_name    String?
@@ -115,7 +121,7 @@ model User {
   password_reset_expiry DateTime?
   password_reset_used   Boolean   @default(false)
 
-  shop              Shop                @relation(fields: [tenant_id], references: [id])
+  shop              Shop?               @relation(fields: [tenant_id], references: [id])
   managedBranches   Branch[]            @relation("BranchManager")
   managedWarehouses Warehouse[]         @relation("WarehouseManager")
   createdProducts   Product[]           @relation("ProductCreatedBy")
@@ -133,6 +139,9 @@ model Shop {
   name                 String  @map("shop_name") @db.VarChar(200)
   businessRegistration String? @map("business_registration") @db.VarChar(100)
   email                String?
+
+  subscriptionPlan     String?                     @map("subscription_plan") @db.VarChar(50)
+  paymentStatus        SubscriptionPaymentStatus   @default(PENDING) @map("payment_status")
 
   users              User[]
   branches           Branch[]

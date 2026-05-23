@@ -38,6 +38,142 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
+  async registerShopOwner(dto: import('./dto/register-shop-owner.dto').RegisterShopOwnerDto) {
+    // Check if user exists
+    const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (existingUser) {
+      throw new BadRequestException('Email already registered');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+
+    // Create Shop and Owner User in a transaction
+    const result = await this.prisma.$transaction(async (prisma) => {
+      const shop = await prisma.shop.create({
+        data: {
+          name: dto.shopName,
+          businessRegistration: dto.businessRegistration,
+          email: dto.email,
+          subscriptionPlan: dto.subscriptionPlan,
+          paymentStatus: 'PENDING',
+        },
+      });
+
+      const user = await prisma.user.create({
+        data: {
+          tenant_id: shop.id,
+          email: dto.email,
+          password_hash: hashedPassword,
+          first_name: dto.firstName,
+          last_name: dto.lastName,
+          phone: dto.phone,
+          role: 'OWNER',
+          status: 'PENDING_APPROVAL',
+          is_active: false,
+          is_verified: true,
+        },
+      });
+
+      return { shop, user };
+    });
+
+    return {
+      message: 'Shop owner registered successfully',
+      data: {
+        userId: result.user.user_id,
+        shopId: result.shop.id,
+      },
+    };
+  }
+
+  async checkStatus(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { status: true, is_active: true, tenant_id: true },
+    });
+
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    let paymentStatus: string | null = null;
+    if (user.tenant_id) {
+      const shop = await this.prisma.shop.findUnique({
+        where: { id: user.tenant_id },
+        select: { paymentStatus: true },
+      });
+      paymentStatus = shop?.paymentStatus ?? null;
+    }
+
+    return {
+      status: user.status,
+      paymentStatus,
+    };
+  }
+
+  async cancelRegistration(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { user_id: true, status: true, tenant_id: true },
+    });
+
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    if (user.status !== 'PENDING_APPROVAL') {
+      throw new BadRequestException('Only pending registrations can be cancelled');
+    }
+
+    // Delete user and shop in a transaction
+    await this.prisma.$transaction(async (prisma) => {
+      await prisma.user.delete({ where: { email } });
+      if (user.tenant_id) {
+        await prisma.shop.delete({ where: { id: user.tenant_id } });
+      }
+    });
+
+    return { message: 'Registration cancelled successfully' };
+  }
+
+  async registerStaff(dto: import('./dto/register-staff.dto').RegisterStaffDto) {
+    // Verify shop exists
+    const shop = await this.prisma.shop.findUnique({ where: { id: dto.shopId } });
+    if (!shop) {
+      throw new BadRequestException('Shop not found');
+    }
+
+    // Check if user exists
+    const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (existingUser) {
+      throw new BadRequestException('Email already registered');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+
+    const user = await this.prisma.user.create({
+      data: {
+        tenant_id: shop.id,
+        email: dto.email,
+        password_hash: hashedPassword,
+        first_name: dto.firstName,
+        last_name: dto.lastName,
+        phone: dto.phone,
+        role: dto.role,
+        status: 'PENDING_APPROVAL',
+        is_active: true,
+        is_verified: false,
+      },
+    });
+
+    return {
+      message: 'Staff registered successfully and is pending approval',
+      data: {
+        userId: user.user_id,
+      },
+    };
+  }
+
   async requestPasswordReset(email: string): Promise<{ message: string }> {
     // Fix 4: Rate limiting — 1 request per minute per email
     const lastRequest = this.resetRequestMap.get(email);
@@ -55,6 +191,11 @@ export class AuthService {
 
     const code = crypto.randomInt(100000, 999999).toString();
     const expiry = new Date(Date.now() + 15 * 60 * 1000);
+
+    // Log the code for local development testing
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(`[DEV ONLY] Password reset code for ${email}: ${code}`);
+    }
 
     try {
       await this.prisma.user.update({
@@ -162,7 +303,8 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
-    const { email, password } = loginDto;
+    const email = loginDto.email.trim();
+    const password = loginDto.password;
 
     try {
       const user = await this.userService.findByEmailWithCredentials(email);
@@ -183,8 +325,43 @@ export class AuthService {
         throw new LockedAccountException(unlockTime);
       }
 
+      // Check PENDING / REJECTED before is_active so we return useful info
+      if (user.status === 'PENDING_APPROVAL') {
+        // Return special error with shop info so frontend can redirect properly
+        const shop = user.tenant_id
+          ? await this.prisma.shop.findUnique({ where: { id: user.tenant_id } })
+          : null;
+        throw new HttpException(
+          {
+            statusCode: 403,
+            message: 'APPROVAL_WAITING',
+            data: {
+              status: 'PENDING_APPROVAL',
+              subscriptionPlan: shop?.subscriptionPlan ?? null,
+              paymentStatus: shop?.paymentStatus ?? null,
+            },
+          },
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      if (user.status === 'REJECTED') {
+        throw new UnauthorizedException('Account has been rejected by administration');
+      }
+
+      let shopInfo: { subscriptionPlan?: string | null; paymentStatus?: string | null } = {};
+      if (user.role === 'OWNER' && user.tenant_id) {
+        const shop = await this.prisma.shop.findUnique({ where: { id: user.tenant_id } });
+        if (shop) {
+          shopInfo = { subscriptionPlan: shop.subscriptionPlan, paymentStatus: shop.paymentStatus };
+        }
+      }
+
       if (!user.is_active) {
-        throw new InactiveUserException();
+        // If owner is approved but hasn't paid, allow login so they can access /payment
+        if (!(user.role === 'OWNER' && user.status === 'APPROVED' && shopInfo.paymentStatus === 'PENDING')) {
+          throw new InactiveUserException();
+        }
       }
 
       if (!user.is_verified) {
@@ -226,6 +403,8 @@ export class AuthService {
       const access_token = await this.jwtService.signAsync(payload);
       const refresh_token = await this.jwtService.signAsync(payload, { expiresIn: '7d' });
 
+      // shopInfo is already fetched above
+
       return {
         statusCode: 200,
         message: 'Login successful',
@@ -240,6 +419,7 @@ export class AuthService {
             last_name: user.last_name,
             role: user.role,
             tenant_id: user.tenant_id,
+            ...shopInfo,
           },
         },
       };
@@ -297,6 +477,64 @@ export class AuthService {
       statusCode: 200,
       message: 'Login successful',
       data: loginTokens,
+    };
+  }
+
+  async completePayment(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { user_id: userId } });
+    if (!user || !user.tenant_id) {
+      throw new BadRequestException('User or shop not found');
+    }
+
+    const tenantId = user.tenant_id;
+
+    await this.prisma.$transaction(async (prisma) => {
+      await prisma.shop.update({
+        where: { id: tenantId },
+        data: { paymentStatus: 'PAID' },
+      });
+      await prisma.user.update({
+        where: { user_id: userId },
+        data: { is_active: true },
+      });
+    });
+
+    return { message: 'Payment completed. Account is now active.' };
+  }
+
+  async completePaymentByEmail(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { user_id: true, tenant_id: true, status: true, role: true },
+    });
+
+    if (!user || !user.tenant_id) {
+      throw new BadRequestException('User or shop not found');
+    }
+
+    if (user.status !== 'APPROVED') {
+      throw new BadRequestException('Account is not approved for payment');
+    }
+
+    const tenantId = user.tenant_id;
+
+    await this.prisma.$transaction(async (prisma) => {
+      await prisma.shop.update({
+        where: { id: tenantId },
+        data: { paymentStatus: 'PAID' },
+      });
+      await prisma.user.update({
+        where: { user_id: user.user_id },
+        data: { is_active: true },
+      });
+    });
+
+    return { 
+      message: 'Payment completed. Account is now active.',
+      accountDetails: {
+        shopId: tenantId,
+        email: email,
+      }
     };
   }
 }
