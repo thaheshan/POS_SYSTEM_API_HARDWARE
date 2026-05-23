@@ -42,6 +42,7 @@ export class UserService {
         totp_secret: true,
         phone_number: true,
         two_factor_enabled: true,
+        status: true,
       },
     }) as Promise<UserRecord | null>;
   }

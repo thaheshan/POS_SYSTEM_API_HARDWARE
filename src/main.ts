@@ -17,7 +17,7 @@ async function bootstrap() {
   });
 
   app.enableCors({
-    origin: 'http://localhost:3001',
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:4000'],
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Authorization, Accept',
@@ -32,8 +32,8 @@ async function bootstrap() {
     app.useGlobalInterceptors(new DetailedLoggingInterceptor());
   }
 
-  const { httpAdapter } = app.get(HttpAdapterHost);
-  app.useGlobalFilters(new LoggingExceptionFilter(httpAdapter));
+  const httpAdapterHost = app.get(HttpAdapterHost);
+  app.useGlobalFilters(new LoggingExceptionFilter(httpAdapterHost));
 
   await app.listen(process.env.PORT ?? 3000);
 }
