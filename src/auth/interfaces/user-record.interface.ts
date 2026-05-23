@@ -5,6 +5,7 @@ export interface UserRecord {
   first_name: string | null;
   last_name: string | null;
   role: string;
+  status: string;
   is_active: boolean;
   is_verified: boolean;
   tenant_id: string;

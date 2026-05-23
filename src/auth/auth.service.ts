@@ -31,7 +31,10 @@ export class AuthService {
         throw new UnauthorizedException('Invalid email or password');
       }
 
-      const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      const isPasswordValid = await bcrypt.compare(
+        password,
+        user.password_hash,
+      );
 
       if (!isPasswordValid) {
         await this.userService.incrementFailedLoginAttempts(email);
@@ -44,7 +47,13 @@ export class AuthService {
       }
 
       if (!user.is_active) {
-        throw new InactiveUserException();
+        const status = String(user.status);
+
+        throw new UnauthorizedException({
+          message: 'Account is inactive. Please contact support.',
+          status,
+          userId: user.user_id,
+        });
       }
 
       if (!user.is_verified) {
