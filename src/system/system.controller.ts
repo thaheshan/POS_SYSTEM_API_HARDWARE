@@ -52,4 +52,25 @@ export class SystemController {
       maintenance_mode: process.env.MAINTENANCE_MODE === 'true',
     };
   }
+
+  // get active shops for staff registration
+  @Get('shops')
+  @ApiOperation({ summary: 'Get list of active shops for registration' })
+  @ApiResponse({ status: 200, description: 'List of shops' })
+  async getShops() {
+    this.logger.log('Fetching active shops for registration');
+    const shops = await this.prisma.shop.findMany({
+      where: {
+        paymentStatus: 'PAID',
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+    return shops;
+  }
 }

@@ -8,6 +8,11 @@ export class RegisterStaffDto {
   @IsNotEmpty()
   shopId: string;
 
+  @ApiProperty({ example: '8-char-code', description: 'Shop Verification Code from owner' })
+  @IsString()
+  @IsNotEmpty()
+  shopVerificationCode: string;
+
   @ApiProperty({ example: 'John', description: 'First name' })
   @IsString()
   @IsNotEmpty()
