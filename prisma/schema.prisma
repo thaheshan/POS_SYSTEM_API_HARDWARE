@@ -130,6 +130,7 @@ model User {
   receivedGrns      GoodsReceivedNote[] @relation("GrnReceiver")
   createdReturns    SalesReturn[]       @relation("ReturnCreator")
   approvedReturns   SalesReturn[]       @relation("ReturnApprover")
+  notifications     Notification[]      @relation("UserNotifications")
 
   @@map("users")
 }
@@ -160,6 +161,7 @@ model Shop {
   creditNotes        CreditNote[]
   generatedReports   GeneratedReport[]
   suppliers          Supplier[]
+  notifications      Notification[]
 
   @@map("shops")
 }
@@ -654,8 +656,28 @@ model SupplierProduct {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  supplier Supplier @relation(fields: [supplierId], references: [id])
-  product  Product  @relation(fields: [productId], references: [id])
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  product       Product  @relation(fields: [productId], references: [id])
 
+  @@unique([supplierId, productId])
   @@map("supplier_products")
+}
+
+// ================= NOTIFICATIONS =================
+model Notification {
+  id        String   @id @default(uuid()) @map("notification_id") @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String?  @map("user_id") 
+  title     String
+  message   String
+  type      String   // INFO, WARNING, SUCCESS, ERROR
+  isRead    Boolean  @default(false) @map("is_read")
+  link      String?  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  shop Shop @relation(fields: [tenantId], references: [id])
+  user User? @relation("UserNotifications", fields: [userId], references: [user_id])
+
+  @@map("notifications")
 }
