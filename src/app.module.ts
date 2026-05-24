@@ -14,6 +14,7 @@ import { TokenLoggerMiddleware } from './common/middleware/token-logger.middlewa
 import { CustomersModule } from './customers/customers.module';
 import { SalesModule } from './sales/sales.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     CustomersModule,
     SalesModule,
     DashboardModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

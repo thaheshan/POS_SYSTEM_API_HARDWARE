@@ -9,13 +9,31 @@ export class SalesService {
   constructor(private prisma: PrismaService) {}
 
   async getSales(tenantId: string, query: any) {
-    const limit = Number(query.limit) || 10;
+    const limit = Number(query.limit) || 1000;
     const page = Number(query.page) || 1;
     const skip = (page - 1) * limit;
 
+    // Build optional date range filter
+    const dateFilter: any = {};
+    if (query.startDate) {
+      const start = new Date(query.startDate);
+      start.setUTCHours(0, 0, 0, 0);
+      dateFilter.gte = start;
+    }
+    if (query.endDate) {
+      const end = new Date(query.endDate);
+      end.setUTCHours(23, 59, 59, 999);
+      dateFilter.lte = end;
+    }
+
+    const where: any = { tenantId };
+    if (Object.keys(dateFilter).length > 0) {
+      where.createdAt = dateFilter;
+    }
+
     const [invoices, total] = await Promise.all([
       this.prisma.salesInvoice.findMany({
-        where: { tenantId },
+        where,
         include: {
           customer: { select: { name: true } }
         },
@@ -23,7 +41,7 @@ export class SalesService {
         take: limit,
         skip
       }),
-      this.prisma.salesInvoice.count({ where: { tenantId } })
+      this.prisma.salesInvoice.count({ where })
     ]);
 
     return {
@@ -178,9 +196,27 @@ export class SalesService {
       return {
         success: true,
         invoiceId: invoice.id,
+        invoiceNumber,
         totalAmount,
         message: 'Checkout completed successfully',
       };
+    }).then(async (result) => {
+      // Create a notification after successful checkout (outside transaction)
+      try {
+        await this.prisma.notification.create({
+          data: {
+            tenantId,
+            userId,
+            title: 'Sale Completed',
+            message: `Invoice ${result.invoiceNumber} for LKR ${Number(result.totalAmount).toLocaleString()} was processed successfully.`,
+            type: 'SUCCESS',
+            link: '/sales',
+          },
+        });
+      } catch (err) {
+        this.logger.warn('Failed to create sale notification: ' + err.message);
+      }
+      return result;
     });
   }
 }
