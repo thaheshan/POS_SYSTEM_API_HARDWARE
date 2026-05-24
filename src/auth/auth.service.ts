@@ -143,6 +143,11 @@ export class AuthService {
       throw new BadRequestException('Shop not found');
     }
 
+    // Verify shop verification code (first 8 characters of shop UUID)
+    if (dto.shopVerificationCode !== shop.id.substring(0, 8)) {
+      throw new BadRequestException('Invalid Shop Verification Code');
+    }
+
     // Check if user exists
     const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existingUser) {

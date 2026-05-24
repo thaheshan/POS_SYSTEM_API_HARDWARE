@@ -11,6 +11,9 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { StaffModule } from './staff/staff.module';
 import { AdminModule } from './admin/admin.module';
 import { TokenLoggerMiddleware } from './common/middleware/token-logger.middleware';
+import { CustomersModule } from './customers/customers.module';
+import { SalesModule } from './sales/sales.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -25,6 +28,9 @@ import { TokenLoggerMiddleware } from './common/middleware/token-logger.middlewa
     ScheduleModule.forRoot(),
     StaffModule,
     AdminModule,
+    CustomersModule,
+    SalesModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -12,7 +12,7 @@ import { calculateStockStatus } from 'src/utils/stockHelper';
 
 type StockOverviewPayload = Prisma.StockGetPayload<{
   include: {
-    product: { select: { name: true; sku: true; minimumStockLevel: true } };
+    product: { select: { name: true; sku: true; minimumStockLevel: true; sellingPrice: true; category: { select: { name: true } } } };
     warehouse: {
       select: { name: true };
     };
@@ -34,7 +34,7 @@ export class StockService {
     const rawStocks = await this.prisma.stock.findMany({
       where: whereClause,
       include: {
-        product: { select: { name: true, sku: true, minimumStockLevel: true } },
+        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, category: { select: { name: true } } } },
         warehouse: { select: { name: true } },
       },
     });
@@ -67,7 +67,7 @@ export class StockService {
         tenantId,
       },
       include: {
-        product: { select: { name: true, sku: true, minimumStockLevel: true } },
+        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, category: { select: { name: true } } } },
         warehouse: { select: { name: true } },
       },
     });
@@ -331,6 +331,8 @@ export class StockService {
       warehouse_name: stock.warehouse?.name,
       product_name: stock.product.name,
       sku: stock.product.sku,
+      selling_price: Number(stock.product.sellingPrice),
+      category_name: stock.product.category?.name || 'All',
       quantity,
       reserved_quantity: reserved,
       available_quantity: stockStatus.available_quantity,
