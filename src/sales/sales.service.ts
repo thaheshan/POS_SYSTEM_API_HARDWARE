@@ -58,6 +58,189 @@ export class SalesService {
     };
   }
 
+  async getSaleById(tenantId: string, id: string) {
+    // Determine if the id is a UUID or an invoice number
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    
+    const invoice = await this.prisma.salesInvoice.findFirst({
+      where: {
+        tenantId,
+        ...(isUuid ? { id } : { invoiceNumber: id })
+      },
+      include: {
+        customer: { select: { name: true, phone: true } },
+        items: {
+          include: {
+            product: { select: { name: true, sku: true, sellingPrice: true } }
+          }
+        }
+      }
+    });
+
+    if (!invoice) {
+      throw new BadRequestException('Invoice not found');
+    }
+
+    return {
+      status: 'success',
+      data: {
+        ...invoice,
+        totalAmount: Number(invoice.totalAmount),
+        subtotal: Number(invoice.subtotal),
+        discountAmount: Number(invoice.discountAmount),
+        taxAmount: Number(invoice.taxAmount),
+        items: (invoice as any).items.map((item: any) => ({
+          ...item,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unitPrice),
+          lineTotal: Number(item.lineTotal),
+          taxAmount: Number(item.taxAmount)
+        }))
+      }
+    };
+  }
+
+  async updateSale(tenantId: string, id: string, data: any) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const invoice = await this.prisma.salesInvoice.findFirst({
+      where: {
+        tenantId,
+        ...(isUuid ? { id } : { invoiceNumber: id })
+      },
+      include: { items: true }
+    });
+
+    if (!invoice) {
+      throw new BadRequestException('Invoice not found');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update basic customer info if requested
+      if (invoice.customerId && (data.customerName || data.customerPhone)) {
+        await tx.customer.update({
+          where: { id: invoice.customerId },
+          data: {
+            name: data.customerName !== undefined ? data.customerName : undefined,
+            phone: data.customerPhone !== undefined ? data.customerPhone : undefined
+          }
+        });
+      }
+
+      let newSubtotal = Number(invoice.subtotal);
+      let newTax = Number(invoice.taxAmount ?? 0);
+
+      // 2. If new items are provided, replace the old items
+      if (data.items && Array.isArray(data.items)) {
+        // Delete old items
+        await tx.salesInvoiceItem.deleteMany({
+          where: { invoiceId: invoice.id }
+        });
+
+        newSubtotal = 0;
+        newTax = 0;
+        const lineItems: any[] = [];
+
+        for (const it of data.items) {
+          const product = await tx.product.findFirst({
+            where: { id: it.productId, tenantId }
+          });
+          
+          if (!product) continue;
+
+          const unitPrice = Number(it.unitPrice ?? product.sellingPrice);
+          const qty = Number(it.quantity ?? 1);
+          const lineTotal = unitPrice * qty;
+          const taxRate = Number(product.taxRate ?? 0);
+          const taxAmount = lineTotal * (taxRate / 100);
+
+          newSubtotal += lineTotal;
+          newTax += taxAmount;
+
+          // Resolve warehouseId: prefer existing item's warehouse, else first available
+          const existingWarehouseId = (invoice as any).items?.[0]?.warehouseId;
+          let warehouseId = existingWarehouseId;
+          if (!warehouseId) {
+            const wh = await tx.warehouse.findFirst({ where: { tenantId } });
+            if (!wh) continue; // skip item if no warehouse exists
+            warehouseId = wh.id;
+          }
+
+          lineItems.push({
+            productId: it.productId,
+            quantity: qty,
+            unitPrice,
+            lineTotal,
+            taxRate,
+            taxAmount,
+            warehouseId,
+          });
+        }
+
+        if (lineItems.length > 0) {
+          await tx.salesInvoiceItem.createMany({
+            data: lineItems.map((li: any) => ({ ...li, invoiceId: invoice.id }))
+          });
+        }
+      }
+
+      // 3. Update the main invoice record
+      const discount = data.discount !== undefined ? Number(data.discount) : Number(invoice.discountAmount);
+      const totalAmount = newSubtotal - discount + newTax;
+
+      await tx.salesInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          notes: data.notes ?? invoice.notes,
+          discountAmount: discount,
+          subtotal: newSubtotal,
+          taxAmount: newTax,
+          totalAmount: totalAmount
+        }
+      });
+
+      return {
+        success: true,
+        message: 'Invoice updated successfully'
+      };
+    });
+  }
+
+  async deleteSale(tenantId: string, id: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const invoice = await this.prisma.salesInvoice.findFirst({
+      where: {
+        tenantId,
+        ...(isUuid ? { id } : { invoiceNumber: id })
+      }
+    });
+
+    if (!invoice) {
+      throw new BadRequestException('Invoice not found');
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // 1. Delete associated invoice items
+        await tx.salesInvoiceItem.deleteMany({
+          where: { invoiceId: invoice.id }
+        });
+
+        // 2. Delete the invoice itself
+        await tx.salesInvoice.delete({
+          where: { id: invoice.id }
+        });
+
+        return {
+          success: true,
+          message: 'Invoice permanently deleted'
+        };
+      });
+    } catch (error) {
+      this.logger.error(`Failed to delete invoice ${invoice.id}:`, error);
+      throw new BadRequestException('Failed to delete invoice because of related records or database error. Check backend console.');
+    }
+  }
+
   async checkout(dto: CreateCheckoutDto, tenantId: string, userId: string) {
     this.logger.log(`Processing POS checkout for tenant=${tenantId}, items=${dto.items.length}`);
 
