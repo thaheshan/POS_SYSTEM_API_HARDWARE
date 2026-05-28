@@ -12,7 +12,7 @@ import { calculateStockStatus } from 'src/utils/stockHelper';
 
 type StockOverviewPayload = Prisma.StockGetPayload<{
   include: {
-    product: { select: { name: true; sku: true; minimumStockLevel: true; sellingPrice: true; category: { select: { name: true } } } };
+    product: { select: { name: true; sku: true; minimumStockLevel: true; sellingPrice: true; category: { select: { name: true } }; images: { select: { imageUrl: true; isPrimary: true }; orderBy: { isPrimary: 'desc' }; take: 1 } } };
     warehouse: {
       select: { name: true };
     };
@@ -34,7 +34,20 @@ export class StockService {
     const rawStocks = await this.prisma.stock.findMany({
       where: whereClause,
       include: {
-        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, category: { select: { name: true } } } },
+        product: {
+          select: {
+            name: true,
+            sku: true,
+            minimumStockLevel: true,
+            sellingPrice: true,
+            category: { select: { name: true } },
+            images: {
+              select: { imageUrl: true, isPrimary: true },
+              orderBy: { isPrimary: 'desc' },
+              take: 1,
+            },
+          },
+        },
         warehouse: { select: { name: true } },
       },
     });
@@ -67,7 +80,7 @@ export class StockService {
         tenantId,
       },
       include: {
-        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, category: { select: { name: true } } } },
+        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, category: { select: { name: true } }, images: { select: { imageUrl: true, isPrimary: true }, orderBy: { isPrimary: 'desc' }, take: 1 } } },
         warehouse: { select: { name: true } },
       },
     });
@@ -203,9 +216,9 @@ export class StockService {
       variantId: rawStock.variant_id,
       warehouseId: rawStock.warehouse_id,
       branchId: rawStock.branch_id,
-      quantity: new Decimal(rawStock.quantity),
-      reservedQuantity: new Decimal(rawStock.reserved_quantity), // Use snake_case here!
-      damagedQuantity: new Decimal(rawStock.damaged_quantity), // Use snake_case here!
+      quantity: new Decimal(rawStock.quantity ?? 0),
+      reservedQuantity: new Decimal(rawStock.reserved_quantity ?? 0), // Use snake_case here!
+      damagedQuantity: new Decimal(rawStock.damaged_quantity ?? 0), // Use snake_case here!
       lastUpdated: rawStock.last_updated,
     } as Stock;
   }
@@ -333,6 +346,7 @@ export class StockService {
       sku: stock.product.sku,
       selling_price: Number(stock.product.sellingPrice),
       category_name: stock.product.category?.name || 'All',
+      image_url: (stock.product as any).images?.[0]?.imageUrl ?? null,
       quantity,
       reserved_quantity: reserved,
       available_quantity: stockStatus.available_quantity,
@@ -364,7 +378,83 @@ export class StockService {
       if (isLowStockRequested) return s.low_stock === true;
       if (isOutOfStockRequested) return s.out_of_stock === true;
 
-      return true;
     });
+  }
+
+  async getStockTrend(tenantId: string, startDateStr?: string, endDateStr?: string) {
+    this.logger.log(`Generating stock trend for tenant=${tenantId}, start=${startDateStr}, end=${endDateStr}`);
+    
+    let startDate = new Date();
+    if (startDateStr) {
+      startDate = new Date(startDateStr);
+    } else {
+      startDate.setDate(startDate.getDate() - 30);
+    }
+
+    let endDate = new Date();
+    if (endDateStr) {
+      endDate = new Date(endDateStr);
+    }
+
+    const movements = await this.prisma.stockMovement.findMany({
+      where: {
+        tenantId,
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        movementType: true,
+        quantity: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    const trendMap = new Map<string, { in: number; out: number }>();
+    
+    // Calculate difference in days
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    
+    // Limit to max 90 days to keep the chart clean and high performance
+    const limitDays = Math.min(diffDays, 90);
+
+    for (let i = limitDays - 1; i >= 0; i--) {
+      const d = new Date(endDate);
+      d.setDate(d.getDate() - i);
+      const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+      trendMap.set(label, { in: 0, out: 0 });
+    }
+
+    movements.forEach((m) => {
+      const label = new Date(m.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+      if (trendMap.has(label)) {
+        const current = trendMap.get(label)!;
+        const qty = Math.abs(Number(m.quantity));
+        if (m.movementType === 'IN' || m.movementType === 'RETURN') {
+          current.in += qty;
+        } else if (m.movementType === 'OUT' || m.movementType === 'DAMAGE') {
+          current.out += qty;
+        } else if (m.movementType === 'ADJUSTMENT') {
+          const rawQty = Number(m.quantity);
+          if (rawQty > 0) {
+            current.in += rawQty;
+          } else {
+            current.out += Math.abs(rawQty);
+          }
+        }
+        trendMap.set(label, current);
+      }
+    });
+
+    return Array.from(trendMap.entries()).map(([name, val]) => ({
+      name,
+      in: Math.round(val.in),
+      out: Math.round(val.out),
+    }));
   }
 }

@@ -15,6 +15,7 @@ import { CustomersModule } from './customers/customers.module';
 import { SalesModule } from './sales/sales.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { SuppliersModule } from './suppliers/suppliers.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     SalesModule,
     DashboardModule,
     NotificationsModule,
+    SuppliersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

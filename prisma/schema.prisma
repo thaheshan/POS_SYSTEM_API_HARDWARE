@@ -524,6 +524,9 @@ model Customer {
   tenantId           String   @map("tenant_id") @db.Uuid
   name               String   @map("customer_name") @db.VarChar(200)
   phone              String   @db.VarChar(20)
+  email              String?  @db.VarChar(100)
+  address            String?  @db.Text
+  customerType       String   @default("Individual") @map("customer_type") @db.VarChar(50)
   outstandingBalance Decimal  @default(0) @map("outstanding_balance") @db.Decimal(10, 2)
   totalPurchases     Decimal  @default(0) @map("total_purchases") @db.Decimal(10, 2)
   createdAt          DateTime @default(now()) @map("created_at")

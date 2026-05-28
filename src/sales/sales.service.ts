@@ -59,9 +59,8 @@ export class SalesService {
   }
 
   async getSaleById(tenantId: string, id: string) {
-    // Determine if the id is a UUID or an invoice number
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    
+
     const invoice = await this.prisma.salesInvoice.findFirst({
       where: {
         tenantId,
@@ -131,7 +130,6 @@ export class SalesService {
 
       // 2. If new items are provided, replace the old items
       if (data.items && Array.isArray(data.items)) {
-        // Delete old items
         await tx.salesInvoiceItem.deleteMany({
           where: { invoiceId: invoice.id }
         });
@@ -144,7 +142,7 @@ export class SalesService {
           const product = await tx.product.findFirst({
             where: { id: it.productId, tenantId }
           });
-          
+
           if (!product) continue;
 
           const unitPrice = Number(it.unitPrice ?? product.sellingPrice);
@@ -156,12 +154,11 @@ export class SalesService {
           newSubtotal += lineTotal;
           newTax += taxAmount;
 
-          // Resolve warehouseId: prefer existing item's warehouse, else first available
           const existingWarehouseId = (invoice as any).items?.[0]?.warehouseId;
           let warehouseId = existingWarehouseId;
           if (!warehouseId) {
             const wh = await tx.warehouse.findFirst({ where: { tenantId } });
-            if (!wh) continue; // skip item if no warehouse exists
+            if (!wh) continue;
             warehouseId = wh.id;
           }
 
@@ -220,12 +217,10 @@ export class SalesService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Delete associated invoice items
         await tx.salesInvoiceItem.deleteMany({
           where: { invoiceId: invoice.id }
         });
 
-        // 2. Delete the invoice itself
         await tx.salesInvoice.delete({
           where: { id: invoice.id }
         });
@@ -244,162 +239,168 @@ export class SalesService {
   async checkout(dto: CreateCheckoutDto, tenantId: string, userId: string) {
     this.logger.log(`Processing POS checkout for tenant=${tenantId}, items=${dto.items.length}`);
 
-    return this.prisma.$transaction(async (tx) => {
-      // --- 1. Build invoice line items & validate stock ---
-      let subtotal = 0;
-      const lineItems: any[] = [];
-      let resolvedBranchId: string | null = null;
+    let transactionResult: any;
 
-      for (const item of dto.items) {
-        // Fetch product details (price, tax)
-        const product = await tx.product.findFirst({
-          where: { id: item.productId, tenantId },
-        });
-        if (!product) {
-          throw new BadRequestException(`Product ${item.productId} not found`);
-        }
+    try {
+      transactionResult = await this.prisma.$transaction(async (tx) => {
+        // --- 1. Build invoice line items & validate stock ---
+        let subtotal = 0;
+        const lineItems: any[] = [];
+        let resolvedBranchId: string | null = null;
 
-        const unitPrice = item.unitPrice ?? Number(product.sellingPrice);
-        const lineTotal = unitPrice * item.quantity;
-        subtotal += lineTotal;
+        for (const item of dto.items) {
+          const product = await tx.product.findFirst({
+            where: { id: item.productId, tenantId },
+          });
+          if (!product) {
+            throw new BadRequestException(`Product ${item.productId} not found`);
+          }
 
-        // Find stock record for this product
-        const stockRecord = await tx.stock.findFirst({
-          where: {
+          const unitPrice = item.unitPrice ?? Number(product.sellingPrice);
+          const lineTotal = unitPrice * item.quantity;
+          subtotal += lineTotal;
+
+          const stockRecord = await tx.stock.findFirst({
+            where: {
+              productId: item.productId,
+              tenantId,
+              ...(item.warehouseId ? { warehouseId: item.warehouseId } : {}),
+            },
+          });
+
+          if (!stockRecord) {
+            throw new BadRequestException(`No stock record found for product "${product.name}"`);
+          }
+
+          if (!resolvedBranchId) {
+            resolvedBranchId = stockRecord.branchId;
+          }
+
+          const available = Number(stockRecord.quantity) - Number(stockRecord.reservedQuantity);
+          if (available < item.quantity) {
+            throw new BadRequestException(
+              `Insufficient stock for "${product.name}". Available: ${available}, Requested: ${item.quantity}`,
+            );
+          }
+
+          // Deduct stock
+          await tx.stock.update({
+            where: { id: stockRecord.id },
+            data: { quantity: { decrement: item.quantity } },
+          });
+
+          // Stock movement log
+          await tx.stockMovement.create({
+            data: {
+              tenantId,
+              productId: item.productId,
+              warehouseId: stockRecord.warehouseId,
+              movementType: 'OUT',
+              quantity: -item.quantity,
+              beforeQuantity: stockRecord.quantity,
+              afterQuantity: Number(stockRecord.quantity) - item.quantity,
+              referenceType: 'SALE',
+              createdBy: userId,
+            },
+          });
+
+          lineItems.push({
             productId: item.productId,
-            tenantId,
-            ...(item.warehouseId ? { warehouseId: item.warehouseId } : {}),
-          },
-        });
-
-        if (!stockRecord) {
-          throw new BadRequestException(`No stock record found for product ${product.name}`);
-        }
-
-        // Resolve branchId from the stock record (real branchId from DB)
-        if (!resolvedBranchId) {
-          resolvedBranchId = stockRecord.branchId;
-        }
-
-        const available = Number(stockRecord.quantity) - Number(stockRecord.reservedQuantity);
-        if (available < item.quantity) {
-          throw new BadRequestException(
-            `Insufficient stock for ${product.name}. Available: ${available}, Requested: ${item.quantity}`,
-          );
-        }
-
-        // Deduct stock
-        await tx.stock.update({
-          where: { id: stockRecord.id },
-          data: { quantity: { decrement: item.quantity } },
-        });
-
-        // Stock movement log
-        await tx.stockMovement.create({
-          data: {
-            tenantId,
-            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice,
+            lineTotal,
+            taxRate: product.taxRate ?? 0,
+            taxAmount: lineTotal * (Number(product.taxRate ?? 0) / 100),
             warehouseId: stockRecord.warehouseId,
-            movementType: 'OUT',
-            quantity: -item.quantity,
-            beforeQuantity: stockRecord.quantity,
-            afterQuantity: Number(stockRecord.quantity) - item.quantity,
-            referenceType: 'SALE',
-            createdBy: userId,
-          },
-        });
-
-        lineItems.push({
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice,
-          lineTotal: lineTotal,
-          taxRate: product.taxRate ?? 0,
-          taxAmount: lineTotal * (Number(product.taxRate ?? 0) / 100),
-          warehouseId: stockRecord.warehouseId,
-        });
-      }
-
-      // If still no branchId resolved, fall back to first branch of this tenant
-      if (!resolvedBranchId) {
-        const firstBranch = await tx.branch.findFirst({ where: { tenantId } });
-        if (!firstBranch) {
-          throw new BadRequestException('No branch found for this tenant. Please create a branch first.');
+          });
         }
-        resolvedBranchId = firstBranch.id;
-      }
 
-      this.logger.log(`Using branchId: ${resolvedBranchId}`);
+        // Fallback branchId
+        if (!resolvedBranchId) {
+          const firstBranch = await tx.branch.findFirst({ where: { tenantId } });
+          if (!firstBranch) {
+            throw new BadRequestException('No branch found for this tenant. Please create a branch first.');
+          }
+          resolvedBranchId = firstBranch.id;
+        }
 
-      // --- 2. Calculate totals ---
-      const discount = dto.discount ?? 0;
-      const afterDiscount = subtotal - discount;
-      const taxAmount = lineItems.reduce((sum, li) => sum + li.taxAmount, 0);
-      const totalAmount = afterDiscount + taxAmount;
+        this.logger.log(`Using branchId: ${resolvedBranchId}`);
 
-      // --- 3. Create Sales Invoice ---
-      const count = await tx.salesInvoice.count({ where: { tenantId } });
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${(count + 1).toString().padStart(5, '0')}`;
-      const now = new Date();
+        // --- 2. Calculate totals ---
+        const discount = dto.discount ?? 0;
+        const afterDiscount = subtotal - discount;
+        const taxAmount = lineItems.reduce((sum, li) => sum + Number(li.taxAmount), 0);
+        const totalAmount = afterDiscount + taxAmount;
 
-      const invoice = await tx.salesInvoice.create({
-        data: {
-          tenantId,
-          branchId: resolvedBranchId,  // ✅ Real branchId from stock record
-          customerId: dto.customerId ?? null,
-          invoiceNumber,
-          invoiceDate: now,
-          invoiceTime: now,
-          saleType: 'CASH',
-          subtotal: subtotal,
-          discountAmount: discount,
-          taxAmount,
-          totalAmount,
-          paymentStatus: 'PAID',
-          status: 'COMPLETED',
-          notes: dto.notes,
-          cashierId: userId,
-          items: {
-            create: lineItems.map((li) => ({
-              productId: li.productId,
-              quantity: li.quantity,
-              unitPrice: li.unitPrice,
-              lineTotal: li.lineTotal,
-              taxRate: li.taxRate,
-              taxAmount: li.taxAmount,
-              warehouseId: li.warehouseId,
-            })),
-          },
-        },
-        include: { items: true },
-      });
+        // --- 3. Create Sales Invoice ---
+        const timestamp = Date.now().toString(); // Use full timestamp
+        const randomPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        const invoiceNumber = `INV-${new Date().getFullYear()}-${timestamp}-${randomPart}`;
+        const now = new Date();
 
-      this.logger.log(`Invoice created: ${invoice.id}, total=${totalAmount}`);
-
-      return {
-        success: true,
-        invoiceId: invoice.id,
-        invoiceNumber,
-        totalAmount,
-        message: 'Checkout completed successfully',
-      };
-    }).then(async (result) => {
-      // Create a notification after successful checkout (outside transaction)
-      try {
-        await this.prisma.notification.create({
+        const invoice = await tx.salesInvoice.create({
           data: {
             tenantId,
-            userId,
-            title: 'Sale Completed',
-            message: `Invoice ${result.invoiceNumber} for LKR ${Number(result.totalAmount).toLocaleString()} was processed successfully.`,
-            type: 'SUCCESS',
-            link: '/sales',
+            branchId: resolvedBranchId,
+            customerId: dto.customerId ?? null,
+            invoiceNumber,
+            invoiceDate: now,
+            invoiceTime: now,
+            saleType: 'CASH',
+            subtotal,
+            discountAmount: discount,
+            taxAmount,
+            totalAmount,
+            paymentStatus: 'PAID',
+            status: 'COMPLETED',
+            notes: dto.notes ?? null,
+            cashierId: userId,
+            items: {
+              create: lineItems.map((li) => ({
+                productId: li.productId,
+                quantity: li.quantity,
+                unitPrice: li.unitPrice,
+                lineTotal: li.lineTotal,
+                taxRate: li.taxRate,
+                taxAmount: li.taxAmount,
+                warehouseId: li.warehouseId,
+              })),
+            },
           },
+          include: { items: true },
         });
-      } catch (err) {
-        this.logger.warn('Failed to create sale notification: ' + err.message);
-      }
-      return result;
+
+        this.logger.log(`Invoice created: ${invoice.id}, total=${totalAmount}`);
+
+        return {
+          success: true,
+          invoiceId: invoice.id,
+          invoiceNumber,
+          totalAmount,
+          message: 'Checkout completed successfully',
+        };
+      });
+    } catch (error) {
+      this.logger.error('CHECKOUT FAILED:', error?.message || error);
+      // Re-throw known business exceptions as-is; wrap unknown DB errors
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Checkout failed: ${error?.message || 'Unknown database error. Check backend logs.'}`);
+    }
+
+    // --- 4. Fire notification AFTER transaction (non-blocking, won't fail checkout) ---
+    this.prisma.notification.create({
+      data: {
+        tenantId,
+        userId,
+        title: 'Sale Completed',
+        message: `Invoice ${transactionResult.invoiceNumber} for LKR ${Number(transactionResult.totalAmount).toLocaleString()} was processed successfully.`,
+        type: 'SUCCESS',
+        link: '/sales',
+      },
+    }).catch((err) => {
+      this.logger.warn('Failed to create sale notification: ' + err.message);
     });
+
+    return transactionResult;
   }
 }
