@@ -19,6 +19,74 @@ export class StaffService {
   private readonly logger = new Logger(StaffService.name);
   constructor(private readonly prisma: PrismaService) {}
 
+  async getAllStaff(tenantId: string) {
+    this.logger.log(`Fetching all staff for tenant: ${tenantId}`);
+    const staff = await this.prisma.user.findMany({
+      where: {
+        tenant_id: tenantId,
+        status: 'APPROVED',
+      },
+      select: {
+        user_id: true,
+        first_name: true,
+        last_name: true,
+        email: true,
+        phone: true,
+        role: true,
+        is_active: true,
+        status: true,
+        created_at: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return {
+      success: true,
+      data: staff.map(s => ({
+        id: s.user_id,
+        name: `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
+        email: s.email,
+        phone: s.phone ?? 'N/A',
+        role: s.role,
+        status: s.is_active ? 'Active' : 'Inactive',
+        createdAt: s.created_at,
+      })),
+    };
+  }
+
+  async getPendingStaff(tenantId: string) {
+    this.logger.log(`Fetching pending staff for tenant: ${tenantId}`);
+    const pending = await this.prisma.user.findMany({
+      where: {
+        tenant_id: tenantId,
+        status: 'PENDING_APPROVAL',
+      },
+      select: {
+        user_id: true,
+        first_name: true,
+        last_name: true,
+        email: true,
+        role: true,
+        created_at: true,
+        shop: { select: { id: true, name: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return {
+      success: true,
+      data: pending.map(p => ({
+        id: p.user_id,
+        name: `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim(),
+        email: p.email,
+        role: p.role,
+        shopId: p.shop?.id ?? 'N/A',
+        shopName: p.shop?.name ?? 'N/A',
+        submittedAt: p.created_at,
+      })),
+    };
+  }
+
   async registerStaff(dto: RegisterStaffDto) {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(dto.password, saltRounds);

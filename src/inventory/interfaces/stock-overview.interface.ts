@@ -7,6 +7,7 @@ export interface StockOverviewResponse {
   sku: string;
   selling_price?: number;
   category_name?: string;
+  image_url?: string | null;
   quantity: number;
   reserved_quantity: number;
   available_quantity: number;

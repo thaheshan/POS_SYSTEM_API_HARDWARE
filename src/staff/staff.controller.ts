@@ -27,6 +27,20 @@ export class StaffController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  async getAllStaff(@Req() req: AuthRequest) {
+    return this.staffService.getAllStaff(req.user.tenant_id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pending')
+  @HttpCode(HttpStatus.OK)
+  async getPendingStaff(@Req() req: AuthRequest) {
+    return this.staffService.getPendingStaff(req.user.tenant_id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('status/:staff_id')
   @HttpCode(HttpStatus.OK)
   async getStaffStatus(

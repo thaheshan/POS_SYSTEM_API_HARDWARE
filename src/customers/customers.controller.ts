@@ -1,4 +1,4 @@
-import { Controller, Get, Req, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards, Query } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -13,5 +13,15 @@ export class CustomersController {
   @Get()
   async getCustomers(@Req() req: any, @Query() query: any) {
     return this.customersService.getCustomers(req.user.tenant_id, query);
+  }
+
+  @Post()
+  async createCustomer(@Req() req: any, @Body() body: any) {
+    return this.customersService.createCustomer(req.user.tenant_id, body);
+  }
+
+  @Patch(':id')
+  async updateCustomer(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    return this.customersService.updateCustomer(req.user.tenant_id, id, body);
   }
 }
