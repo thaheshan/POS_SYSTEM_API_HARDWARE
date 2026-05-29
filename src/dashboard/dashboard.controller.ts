@@ -12,7 +12,7 @@ export class DashboardController {
 
   @Get('stats')
   async getStats(@Req() req: any) {
-    return this.dashboardService.getStats(req.user.tenant_id);
+    return this.dashboardService.getStats(req.user.tenant_id, req.user);
   }
 
   @Get('top-products')
@@ -28,11 +28,17 @@ export class DashboardController {
     return this.dashboardService.getRecentTransactions(
       req.user.tenant_id,
       limit ? parseInt(limit) : 10,
+      req.user
     );
   }
 
   @Get('weekly-chart')
   async getWeeklyChart(@Req() req: any) {
     return this.dashboardService.getWeeklyChart(req.user.tenant_id);
+  }
+
+  @Get('pending-payments')
+  async getPendingPayments(@Req() req: any) {
+    return this.dashboardService.getPendingPayments(req.user.tenant_id, req.user);
   }
 }

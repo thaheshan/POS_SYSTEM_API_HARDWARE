@@ -351,7 +351,7 @@ export class SalesService {
             discountAmount: discount,
             taxAmount,
             totalAmount,
-            paymentStatus: 'PAID',
+            paymentStatus: 'PAID', // Or PARTIAL if we implement credit later
             status: 'COMPLETED',
             notes: dto.notes ?? null,
             cashierId: userId,
@@ -369,6 +369,18 @@ export class SalesService {
           },
           include: { items: true },
         });
+
+        // --- Update Customer Totals ---
+        if (dto.customerId) {
+          const balanceAddition = Math.max(0, totalAmount - (dto.paidAmount ?? totalAmount));
+          await tx.customer.update({
+            where: { id: dto.customerId },
+            data: {
+              totalPurchases: { increment: totalAmount },
+              outstandingBalance: { increment: balanceAddition }
+            }
+          });
+        }
 
         this.logger.log(`Invoice created: ${invoice.id}, total=${totalAmount}`);
 

@@ -54,4 +54,9 @@ export class CreateCheckoutDto {
   @IsUUID()
   @IsOptional()
   customerId?: string;
+
+  @ApiPropertyOptional()
+  @IsNumber()
+  @IsOptional()
+  paidAmount?: number;
 }

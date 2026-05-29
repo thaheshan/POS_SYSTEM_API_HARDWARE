@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getStats(tenantId: string) {
+  async getStats(tenantId: string, user?: any) {
     const now = new Date();
 
     // Today bounds (UTC)
@@ -22,6 +22,49 @@ export class DashboardService {
     const nextMonthStart = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
     );
+
+    const userRole = (user?.role || '').toLowerCase();
+    const isStaff = userRole === 'staff' || userRole === 'cashier';
+
+    let staffSales = 0;
+    let staffTransactions = 0;
+    let staffServiceRevenue = 0;
+    let staffServiceEntries = 0;
+    let staffActiveOrders = 0;
+
+    if (isStaff && user?.user_id) {
+      const [salesAgg, serviceAgg, activeOrders] = await Promise.all([
+        this.prisma.salesInvoice.aggregate({
+          where: { 
+            tenantId, 
+            cashierId: user.user_id, 
+            status: 'COMPLETED',
+            createdAt: { gte: todayStart, lt: todayEnd }
+          } as any,
+          _sum: { totalAmount: true },
+          _count: { id: true },
+        }),
+        this.prisma.expense.aggregate({
+          where: { 
+            tenantId, 
+            userId: user.user_id, 
+            status: 'COMPLETED',
+            createdAt: { gte: todayStart, lt: todayEnd }
+          },
+          _sum: { amount: true },
+          _count: { id: true },
+        }),
+        this.prisma.salesInvoice.count({
+          where: { tenantId, cashierId: user.user_id, paymentStatus: 'UNPAID' } as any,
+        }),
+      ]);
+
+      staffSales = Number(salesAgg._sum?.totalAmount ?? 0);
+      staffTransactions = salesAgg._count?.id ?? 0;
+      staffServiceRevenue = Number(serviceAgg._sum?.amount ?? 0);
+      staffServiceEntries = serviceAgg._count?.id ?? 0;
+      staffActiveOrders = activeOrders;
+    }
 
     const [todayAgg, monthAgg, totalCustomers] = await Promise.all([
       // Today's sales aggregate
@@ -54,6 +97,13 @@ export class DashboardService {
       monthlyRevenue: Number(monthAgg._sum.totalAmount ?? 0),
       monthlyTransactions: monthAgg._count.id,
       totalCustomers,
+      ...(isStaff && {
+        staffSales,
+        staffTransactions,
+        staffServiceRevenue,
+        staffServiceEntries,
+        staffActiveOrders,
+      }),
     };
   }
 
@@ -96,9 +146,16 @@ export class DashboardService {
     });
   }
 
-  async getRecentTransactions(tenantId: string, limit = 10) {
+  async getRecentTransactions(tenantId: string, limit = 10, user?: any) {
+    const isStaff = user?.role === 'staff' || user?.role === 'cashier';
+    const whereClause: any = { tenantId };
+
+    if (isStaff && user?.user_id) {
+      whereClause.cashierId = user.user_id;
+    }
+
     const invoices = await this.prisma.salesInvoice.findMany({
-      where: { tenantId },
+      where: whereClause,
       include: { customer: { select: { name: true } } },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -162,6 +219,39 @@ export class DashboardService {
       revenue: Math.round(val.revenue),
       sales: val.sales,
       cost: Math.round(val.revenue * 0.72), // estimated cost ~72% of revenue
+    }));
+  }
+
+  async getPendingPayments(tenantId: string, user: any) {
+    const isStaff = user?.role === 'staff' || user?.role === 'cashier';
+    const whereClause: any = {
+      tenantId,
+      paymentStatus: 'UNPAID',
+    };
+
+    if (isStaff && user?.user_id) {
+      whereClause.cashierId = user.user_id;
+    }
+
+    const pending = await this.prisma.salesInvoice.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        invoiceNumber: true,
+        createdAt: true,
+        totalAmount: true,
+        customer: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+
+    return pending.map(p => ({
+      id: p.id,
+      invoiceNumber: p.invoiceNumber,
+      date: p.createdAt,
+      amount: Number(p.totalAmount),
+      customerName: p.customer ? p.customer.name : 'Walk-in',
     }));
   }
 }
