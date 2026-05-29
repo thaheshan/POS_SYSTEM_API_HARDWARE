@@ -10,11 +10,12 @@ export class AdminService {
     // Include their associated shop details
     const pendingOwners = await this.prisma.user.findMany({
       where: {
-        role: 'OWNER',
+        role: { name: 'OWNER' },
         status: 'PENDING_APPROVAL',
       },
       include: {
         shop: true,
+        role: true,
       },
       orderBy: {
         created_at: 'desc',
@@ -39,10 +40,10 @@ export class AdminService {
   async approveShop(userId: string) {
     const owner = await this.prisma.user.findUnique({
       where: { user_id: userId },
-      include: { shop: true },
+      include: { shop: true, role: true },
     });
 
-    if (!owner || owner.role !== 'OWNER') {
+    if (!owner || owner.role?.name !== 'OWNER') {
       throw new NotFoundException('Owner not found');
     }
 
@@ -64,9 +65,10 @@ export class AdminService {
   async rejectShop(userId: string) {
     const owner = await this.prisma.user.findUnique({
       where: { user_id: userId },
+      include: { role: true },
     });
 
-    if (!owner || owner.role !== 'OWNER') {
+    if (!owner || owner.role?.name !== 'OWNER') {
       throw new NotFoundException('Owner not found');
     }
 

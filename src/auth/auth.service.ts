@@ -48,7 +48,7 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     // Create Shop and Owner User in a transaction
-    const result = await this.prisma.$transaction(async (prisma) => {
+    const result = await this.prisma.db.$transaction(async (prisma) => {
       const shop = await prisma.shop.create({
         data: {
           name: dto.shopName,
@@ -59,6 +59,14 @@ export class AuthService {
         },
       });
 
+      const role = await prisma.role.create({
+        data: {
+          name: 'OWNER',
+          tenant_id: shop.id,
+          permissions: { all: true },
+        }
+      });
+
       const user = await prisma.user.create({
         data: {
           tenant_id: shop.id,
@@ -67,7 +75,7 @@ export class AuthService {
           first_name: dto.firstName,
           last_name: dto.lastName,
           phone: dto.phone,
-          role: 'OWNER',
+          role_id: role.id,
           status: 'PENDING_APPROVAL',
           is_active: false,
           is_verified: true,
@@ -164,7 +172,7 @@ export class AuthService {
         first_name: dto.firstName,
         last_name: dto.lastName,
         phone: dto.phone,
-        role: dto.role,
+        role_id: dto.role,  // dto.role is a UUID string of the role
         status: 'PENDING_APPROVAL',
         is_active: true,
         is_verified: false,

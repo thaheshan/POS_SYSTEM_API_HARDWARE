@@ -1,12 +1,10 @@
 import {
   IsEmail,
-  IsEnum,
   IsNotEmpty,
   IsString,
   IsUUID,
   Matches,
 } from 'class-validator';
-import { Role } from '@prisma/client';
 import { IRegisterStaffRequest } from '../interfaces/register-staff.interface';
 import { regexConstants } from '../../utils/regex.util';
 
@@ -29,9 +27,9 @@ export class RegisterStaffDto implements IRegisterStaffRequest {
   @IsNotEmpty({ message: 'Shop ID is required.' })
   shop_id!: string;
 
-  @IsEnum(Role as object, { message: 'Invalid role specified.' })
+  @IsString()
   @IsNotEmpty({ message: 'Role is required.' })
-  role!: Role;
+  role!: string;  // Now a role ID (UUID string)
 
   @IsString()
   @IsNotEmpty({ message: 'Password is required.' })
