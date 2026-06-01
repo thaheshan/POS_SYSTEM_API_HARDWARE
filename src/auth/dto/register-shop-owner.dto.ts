@@ -41,4 +41,24 @@ export class RegisterShopOwnerDto {
   @IsString()
   @IsOptional()
   subscriptionPlan?: string;
+
+  @ApiPropertyOptional({ example: '123 Main Street', description: 'Shop street address' })
+  @IsString()
+  @IsOptional()
+  address?: string;
+
+  @ApiPropertyOptional({ example: 'Colombo', description: 'City' })
+  @IsString()
+  @IsOptional()
+  city?: string;
+
+  @ApiPropertyOptional({ example: 'Colombo', description: 'District' })
+  @IsString()
+  @IsOptional()
+  district?: string;
+
+  @ApiPropertyOptional({ example: 'Western Province', description: 'Province' })
+  @IsString()
+  @IsOptional()
+  province?: string;
 }

@@ -18,6 +18,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { RolesModule } from './roles/roles.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { ShopsModule } from './shops/shops.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ExpensesModule } from './expenses/expenses.module';
     SuppliersModule,
     RolesModule,
     ExpensesModule,
+    ShopsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
