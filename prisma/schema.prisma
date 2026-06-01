@@ -153,6 +153,7 @@ model Shop {
   creditNotes        CreditNote[]
   generatedReports   GeneratedReport[]
   suppliers          Supplier[]
+  supplierRequests   SupplierRequest[]
   notifications      Notification[]
   roles              Role[]
   expenses           Expense[]
@@ -648,14 +649,36 @@ model Supplier {
   contactPerson String?  @map("contact_person") @db.VarChar(100)
   email         String?  @db.VarChar(100)
   phone         String?  @db.VarChar(20)
+  location      String?  @db.VarChar(200)
+  category      String?  @db.VarChar(100)
   isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   shop             Shop              @relation(fields: [tenantId], references: [id])
   supplierProducts SupplierProduct[]
+  supplierRequests SupplierRequest[]
 
   @@map("suppliers")
+}
+
+model SupplierRequest {
+  id          String   @id @default(uuid()) @map("request_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  requestNo   String   @map("request_no") @db.VarChar(50)
+  supplierId  String?  @map("supplier_id") @db.Uuid
+  priority    String   @default("Normal") @db.VarChar(20)
+  notes       String?  @db.Text
+  status      String   @default("Draft") @db.VarChar(30)
+  items       Json     @default("[]")
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  shop     Shop      @relation(fields: [tenantId], references: [id])
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
+
+  @@map("supplier_requests")
 }
 
 model SupplierProduct {
