@@ -84,6 +84,12 @@ enum SubscriptionPaymentStatus {
   PAID
 }
 
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
 // ================= CORE / TENANT MODELS =================
 model User {
   user_id       String  @id @default(uuid())
@@ -132,9 +138,19 @@ model Shop {
   name                 String  @map("shop_name") @db.VarChar(200)
   businessRegistration String? @map("business_registration") @db.VarChar(100)
   email                String?
+  logo_url             String? @map("logo_url")
+
+  // Address
+  address              String? @db.VarChar(300)
+  city                 String? @db.VarChar(100)
+  district             String? @db.VarChar(100)
+  province             String? @db.VarChar(100)
 
   subscriptionPlan     String?                     @map("subscription_plan") @db.VarChar(50)
   paymentStatus        SubscriptionPaymentStatus   @default(PENDING) @map("payment_status")
+  subscriptionStatus   SubscriptionStatus          @default(INACTIVE) @map("subscription_status")
+  nextPaymentDue       DateTime?                   @map("next_payment_due")
+  selfReportedPaid     Boolean                     @default(false) @map("self_reported_paid")
 
   users              User[]
   branches           Branch[]
@@ -157,8 +173,26 @@ model Shop {
   notifications      Notification[]
   roles              Role[]
   expenses           Expense[]
+  subscriptionPayments SubscriptionPayment[]
 
   @@map("shops")
+}
+
+model SubscriptionPayment {
+  id          String   @id @default(uuid()) @db.Uuid
+  shopId      String   @map("shop_id") @db.Uuid
+  paidAt      DateTime @default(now()) @map("paid_at")
+  amount      Float
+  method      String?
+  recordedBy  String?  @map("recorded_by")
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@map("subscription_payments")
 }
 
 model Role {

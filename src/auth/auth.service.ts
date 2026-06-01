@@ -56,6 +56,10 @@ export class AuthService {
           email: dto.email,
           subscriptionPlan: dto.subscriptionPlan,
           paymentStatus: 'PENDING',
+          address: dto.address,
+          city: dto.city,
+          district: dto.district,
+          province: dto.province,
         },
       });
 
@@ -162,6 +166,15 @@ export class AuthService {
       throw new BadRequestException('Email already registered');
     }
 
+    // Find the role by name for this shop
+    const roleName = (dto.role || 'CASHIER').toUpperCase();
+    const roleRecord = await this.prisma.role.findFirst({
+      where: { tenant_id: shop.id, name: roleName }
+    });
+    if (!roleRecord) {
+      throw new BadRequestException(`Role ${roleName} not found for this shop`);
+    }
+
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     const user = await this.prisma.user.create({
@@ -172,7 +185,7 @@ export class AuthService {
         first_name: dto.firstName,
         last_name: dto.lastName,
         phone: dto.phone,
-        role_id: dto.role,  // dto.role is a UUID string of the role
+        role_id: roleRecord.id,
         status: 'PENDING_APPROVAL',
         is_active: true,
         is_verified: false,
@@ -362,12 +375,28 @@ export class AuthService {
         throw new UnauthorizedException('Account has been rejected by administration');
       }
 
-      let shopInfo: { subscriptionPlan?: string | null; paymentStatus?: string | null } = {};
+      let shopInfo: { subscriptionPlan?: string | null; paymentStatus?: string | null; subscriptionStatus?: string | null; logoUrl?: string | null } = {};
       if (user.role === 'OWNER' && user.tenant_id) {
         const shop = await this.prisma.shop.findUnique({ where: { id: user.tenant_id } });
         if (shop) {
-          shopInfo = { subscriptionPlan: shop.subscriptionPlan, paymentStatus: shop.paymentStatus };
+          shopInfo = { 
+            subscriptionPlan: shop.subscriptionPlan, 
+            paymentStatus: shop.paymentStatus,
+            subscriptionStatus: shop.subscriptionStatus,
+            logoUrl: shop.logo_url
+          };
         }
+      }
+
+      if (shopInfo.subscriptionStatus === 'SUSPENDED') {
+        throw new HttpException(
+          {
+            statusCode: 403,
+            message: 'ACCOUNT_SUSPENDED',
+            data: { status: 'SUSPENDED' },
+          },
+          HttpStatus.FORBIDDEN,
+        );
       }
 
       if (!user.is_active) {
