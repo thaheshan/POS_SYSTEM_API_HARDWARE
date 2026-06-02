@@ -162,6 +162,10 @@ export class SalesService {
             warehouseId = wh.id;
           }
 
+          const purchasePrice = Number(product.purchasePrice ?? 0);
+          const costPriceTotal = purchasePrice * qty;
+          const profit = lineTotal - costPriceTotal;
+
           lineItems.push({
             productId: it.productId,
             quantity: qty,
@@ -170,6 +174,8 @@ export class SalesService {
             taxRate,
             taxAmount,
             warehouseId,
+            costPrice: purchasePrice,
+            profit: profit,
           });
         }
 
@@ -304,6 +310,10 @@ export class SalesService {
             },
           });
 
+          const purchasePrice = Number(product.purchasePrice ?? 0);
+          const costPriceTotal = purchasePrice * item.quantity;
+          const profit = lineTotal - costPriceTotal;
+
           lineItems.push({
             productId: item.productId,
             quantity: item.quantity,
@@ -312,6 +322,8 @@ export class SalesService {
             taxRate: product.taxRate ?? 0,
             taxAmount: lineTotal * (Number(product.taxRate ?? 0) / 100),
             warehouseId: stockRecord.warehouseId,
+            costPrice: purchasePrice,
+            profit: profit,
           });
         }
 
@@ -364,6 +376,8 @@ export class SalesService {
                 taxRate: li.taxRate,
                 taxAmount: li.taxAmount,
                 warehouseId: li.warehouseId,
+                costPrice: li.costPrice ?? null,
+                profit: li.profit ?? null,
               })),
             },
           },

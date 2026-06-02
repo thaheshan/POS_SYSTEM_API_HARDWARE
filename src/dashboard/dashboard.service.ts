@@ -66,7 +66,7 @@ export class DashboardService {
       staffActiveOrders = activeOrders;
     }
 
-    const [todayAgg, monthAgg, totalCustomers] = await Promise.all([
+    const [todayAgg, monthAgg, monthPurchases, monthExpenses, monthSalesItems, totalCustomers] = await Promise.all([
       // Today's sales aggregate
       this.prisma.salesInvoice.aggregate({
         where: {
@@ -77,7 +77,7 @@ export class DashboardService {
         _sum: { totalAmount: true },
         _count: { id: true },
       }),
-      // Monthly revenue aggregate
+      // Monthly revenue aggregate (Sales)
       this.prisma.salesInvoice.aggregate({
         where: {
           tenantId,
@@ -87,14 +87,73 @@ export class DashboardService {
         _sum: { totalAmount: true },
         _count: { id: true },
       }),
+      // Monthly purchases aggregate (GRNs)
+      this.prisma.grnItem.aggregate({
+        where: {
+          grn: {
+            tenantId,
+            receivedDate: { gte: monthStart, lt: nextMonthStart },
+            status: 'completed', // Using default status format from schema
+          },
+        },
+        _sum: { totalCost: true },
+      }),
+      // Monthly expenses aggregate (Category C)
+      this.prisma.expense.aggregate({
+        where: {
+          tenantId,
+          createdAt: { gte: monthStart, lt: nextMonthStart },
+          status: 'COMPLETED',
+        },
+        _sum: { amount: true },
+      }),
+      // Monthly COGS aggregate (Sales Items) - include product.purchasePrice as fallback
+      this.prisma.salesInvoiceItem.findMany({
+        where: {
+          invoice: {
+            tenantId,
+            createdAt: { gte: monthStart, lt: nextMonthStart },
+            status: 'COMPLETED',
+          }
+        },
+        select: {
+          quantity: true,
+          costPrice: true,
+          lineTotal: true,
+          product: { select: { purchasePrice: true } },
+        },
+      }),
       // Total customers
       this.prisma.customer.count({ where: { tenantId } }),
     ]);
 
+    const salesTotal = Number(monthAgg._sum.totalAmount ?? 0);
+    const purchasesTotal = Number(monthPurchases._sum.totalCost ?? 0);
+    const expensesTotal = Number(monthExpenses._sum.amount ?? 0);
+    
+    let cogsTotal = 0;
+    let grossProfit = 0;
+    for (const item of monthSalesItems as any[]) {
+      const qty = Number(item.quantity ?? 0);
+      // Use saved costPrice first, fall back to product's purchasePrice
+      const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
+      const itemCogs = qty * unitCost;
+      const itemMargin = Number(item.lineTotal ?? 0) - itemCogs;
+      cogsTotal += itemCogs;
+      grossProfit += itemMargin;
+    }
+    
+    // Net Profit = Gross Product Margin - Category C Expenses
+    const netRevenue = grossProfit - expensesTotal;
+
     return {
       todaySales: Number(todayAgg._sum.totalAmount ?? 0),
       todayTransactions: todayAgg._count.id,
-      monthlyRevenue: Number(monthAgg._sum.totalAmount ?? 0),
+      monthlyRevenue: netRevenue,
+      monthlyProfit: netRevenue,
+      monthlySales: salesTotal, // useful for potential debugging or future UI
+      monthlyPurchases: purchasesTotal,
+      monthlyExpenses: expensesTotal,
       monthlyTransactions: monthAgg._count.id,
       totalCustomers,
       ...(isStaff && {
@@ -177,18 +236,39 @@ export class DashboardService {
     sevenDaysAgo.setDate(now.getDate() - 6);
     sevenDaysAgo.setUTCHours(0, 0, 0, 0);
 
-    const invoices = await this.prisma.salesInvoice.findMany({
-      where: {
-        tenantId,
-        createdAt: { gte: sevenDaysAgo },
-        status: 'COMPLETED',
-      },
-      select: { createdAt: true, totalAmount: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    const [invoices, expenses] = await Promise.all([
+      this.prisma.salesInvoice.findMany({
+        where: {
+          tenantId,
+          createdAt: { gte: sevenDaysAgo },
+          status: 'COMPLETED',
+        },
+        select: {
+          createdAt: true,
+          totalAmount: true,
+          items: {
+            select: {
+              quantity: true,
+              costPrice: true,
+              lineTotal: true,
+              product: { select: { purchasePrice: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.expense.findMany({
+        where: {
+          tenantId,
+          createdAt: { gte: sevenDaysAgo },
+          status: 'COMPLETED',
+        },
+        select: { createdAt: true, amount: true },
+      }),
+    ]);
 
-    // Build map for last 7 days
-    const dayMap = new Map<string, { revenue: number; sales: number }>();
+    // Build map for last 7 days: revenue = total sales, cost = COGS + expenses, margin = revenue - COGS
+    const dayMap = new Map<string, { revenue: number; sales: number; cost: number; margin: number }>();
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(now.getDate() - i);
@@ -197,10 +277,11 @@ export class DashboardService {
         day: 'numeric',
         timeZone: 'UTC',
       });
-      dayMap.set(key, { revenue: 0, sales: 0 });
+      dayMap.set(key, { revenue: 0, sales: 0, cost: 0, margin: 0 });
     }
 
-    for (const inv of invoices) {
+    // Process Sales + COGS from invoice items in one pass
+    for (const inv of invoices as any[]) {
       const key = inv.createdAt.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -210,15 +291,39 @@ export class DashboardService {
         const cur = dayMap.get(key)!;
         cur.revenue += Number(inv.totalAmount);
         cur.sales += 1;
+        let cogs = 0;
+        for (const item of (inv.items || [])) {
+          const qty = Number(item.quantity ?? 0);
+          // Use saved costPrice; fall back to product's purchasePrice for older records
+          const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
+          cogs += qty * unitCost;
+        }
+        cur.cost += cogs;
+        cur.margin += Number(inv.totalAmount) - cogs;
+        dayMap.set(key, cur);
+      }
+    }
+
+    // Process Expenses (Cost)
+    for (const exp of expenses) {
+      const key = exp.createdAt.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      });
+      if (dayMap.has(key)) {
+        const cur = dayMap.get(key)!;
+        cur.cost += Number(exp.amount);
         dayMap.set(key, cur);
       }
     }
 
     return Array.from(dayMap.entries()).map(([name, val]) => ({
       name,
-      revenue: Math.round(val.revenue),
+      revenue: Math.round(val.revenue - val.cost), // User defines Revenue as Net Profit (Sales - COGS - Expenses)
+      margin: Math.round(val.margin),              // Gross margin
       sales: val.sales,
-      cost: Math.round(val.revenue * 0.72), // estimated cost ~72% of revenue
+      cost: Math.round(val.cost),                  // Product Cost + Expenses
     }));
   }
 
@@ -253,5 +358,98 @@ export class DashboardService {
       amount: Number(p.totalAmount),
       customerName: p.customer ? p.customer.name : 'Walk-in',
     }));
+  }
+
+  async getSummary(tenantId: string, startDate?: string, endDate?: string) {
+    const whereDateSales: any = {};
+    const whereDateGRN: any = {};
+    const whereDateExp: any = {};
+
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setUTCHours(0, 0, 0, 0);
+      whereDateSales.gte = start;
+      whereDateGRN.gte = start;
+      whereDateExp.gte = start;
+    }
+    
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setUTCHours(23, 59, 59, 999);
+      whereDateSales.lte = end;
+      whereDateGRN.lte = end;
+      whereDateExp.lte = end;
+    }
+
+    const [salesAgg, purchasesAgg, expensesAgg, salesItemsAgg] = await Promise.all([
+      this.prisma.salesInvoice.aggregate({
+        where: {
+          tenantId,
+          status: 'COMPLETED',
+          ...(Object.keys(whereDateSales).length > 0 && { createdAt: whereDateSales }),
+        },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.grnItem.aggregate({
+        where: {
+          grn: {
+            tenantId,
+            status: 'completed',
+            ...(Object.keys(whereDateGRN).length > 0 && { receivedDate: whereDateGRN }),
+          },
+        },
+        _sum: { totalCost: true },
+      }),
+      this.prisma.expense.aggregate({
+        where: {
+          tenantId,
+          status: 'COMPLETED',
+          ...(Object.keys(whereDateExp).length > 0 && { createdAt: whereDateExp }),
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.salesInvoiceItem.findMany({
+        where: {
+          invoice: {
+            tenantId,
+            status: 'COMPLETED',
+            ...(Object.keys(whereDateSales).length > 0 && { createdAt: whereDateSales }),
+          }
+        },
+        select: {
+          quantity: true,
+          costPrice: true,
+          lineTotal: true,
+          product: { select: { purchasePrice: true } },
+        },
+      }),
+    ]);
+
+    const totalSales = Number(salesAgg._sum.totalAmount ?? 0);
+    const totalPurchases = Number(purchasesAgg._sum.totalCost ?? 0);
+    const totalExpenses = Number(expensesAgg._sum.amount ?? 0);
+    
+    let cogsTotal = 0;
+    let grossProfit = 0;
+    for (const item of salesItemsAgg as any[]) {
+      const qty = Number(item.quantity ?? 0);
+      const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
+      const itemCogs = qty * unitCost;
+      const itemMargin = Number(item.lineTotal ?? 0) - itemCogs;
+      cogsTotal += itemCogs;
+      grossProfit += itemMargin;
+    }
+    
+    // Net Profit = Gross Product Margin - Category C Expenses
+    const netProfit = grossProfit - totalExpenses;
+
+    return {
+      totalSales,          // Total selling price (turnover)
+      totalPurchases,      // GRN purchases (informational)
+      totalExpenses,       // Category C expenses
+      cogs: cogsTotal,     // Product cost (cost price × qty)
+      grossProfit,         // Product margin before expenses
+      netProfit,           // Final profit: grossProfit - expenses
+    };
   }
 }

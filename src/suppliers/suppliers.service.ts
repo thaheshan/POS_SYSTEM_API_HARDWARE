@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -33,26 +33,49 @@ export class SuppliersService {
   }
 
   async getStats(tenantId: string) {
-    const totalSuppliers = await this.prisma.supplier.count({ where: { tenantId } });
-    const activeSuppliers = await this.prisma.supplier.count({ where: { tenantId, isActive: true } });
+    try {
+      const totalSuppliers = await this.prisma.supplier.count({ where: { tenantId } });
+      const activeSuppliers = await this.prisma.supplier.count({ where: { tenantId, isActive: true } });
 
-    // Pending purchasing module - returning 0s
-    return {
-      success: true,
-      data: {
-        totalSuppliers,
-        activeSuppliers,
-        totalOutstandingPayable: 0,
-        thisMonthPurchases: 0,
-        overduePayments: 0,
-      }
-    };
+      // Pending purchasing module - returning 0s
+      return {
+        success: true,
+        data: {
+          totalSuppliers,
+          activeSuppliers,
+          totalOutstandingPayable: 0,
+          thisMonthPurchases: 0,
+          overduePayments: 0,
+        }
+      };
+    } catch (err) {
+      this.logger.error('getStats failed', err);
+      return {
+        success: true,
+        data: {
+          totalSuppliers: 0,
+          activeSuppliers: 0,
+          totalOutstandingPayable: 0,
+          thisMonthPurchases: 0,
+          overduePayments: 0,
+        }
+      };
+    }
   }
 
   async createSupplier(tenantId: string, body: any) {
     // Generate a simple code if not provided
     const count = await this.prisma.supplier.count({ where: { tenantId } });
     const code = body.supplierCode || `SUP-${1000 + count + 1}`;
+
+    // Check if code already exists
+    const existing = await this.prisma.supplier.findUnique({
+      where: { supplierCode: code }
+    });
+
+    if (existing) {
+      throw new BadRequestException(`Supplier code '${code}' is already in use.`);
+    }
 
     const newSupplier = await this.prisma.supplier.create({
       data: {

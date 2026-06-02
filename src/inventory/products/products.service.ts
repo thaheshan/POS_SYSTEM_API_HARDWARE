@@ -121,21 +121,55 @@ export class ProductsService {
         console.warn('Supabase storage client is not initialized');
       }
 
-      // 5. If initial stock is provided, get the first warehouse for the branch and add stock
-      if (initialStock > 0) {
+      // 5. If initial stock is provided or 0, resolve or auto-create a warehouse
+      if (initialStock >= 0) {
         let warehouseId = dto.warehouseId;
         let branchId = dto.branchId;
 
         // Auto-resolve branch and warehouse if not provided
         if (!warehouseId || !branchId) {
-          const firstWarehouse = await this.prisma.warehouse.findFirst({
+          let firstWarehouse = await this.prisma.warehouse.findFirst({
             where: { tenantId, isActive: true },
           });
-          if (firstWarehouse) {
-            warehouseId = firstWarehouse.id;
-            branchId = firstWarehouse.branchId;
+
+          // No warehouse exists yet — auto-create a default branch + warehouse
+          if (!firstWarehouse) {
+            console.log('No warehouse found for tenant. Auto-creating default Branch + Warehouse...');
+
+            // Create default branch if needed
+            let firstBranch = await this.prisma.branch.findFirst({
+              where: { tenantId, isActive: true },
+            });
+
+            if (!firstBranch) {
+              firstBranch = await this.prisma.branch.create({
+                data: {
+                  tenantId,
+                  name: 'Main Branch',
+                  code: `${tenantId.substring(0, 8).toUpperCase()}-BR01`,
+                  isActive: true,
+                },
+              });
+              console.log('Created default branch:', firstBranch.id);
+            }
+
+            firstWarehouse = await this.prisma.warehouse.create({
+              data: {
+                tenantId,
+                branchId: firstBranch.id,
+                name: 'Main Warehouse',
+                code: `${tenantId.substring(0, 8).toUpperCase()}-WH01`,
+                isActive: true,
+              },
+            });
+            console.log('Created default warehouse:', firstWarehouse.id);
+
           }
+
+          warehouseId = firstWarehouse.id;
+          branchId = firstWarehouse.branchId;
         }
+
         console.log('Resolved warehouseId:', warehouseId, 'branchId:', branchId);
 
         if (warehouseId && branchId) {
@@ -183,6 +217,7 @@ export class ProductsService {
         category: true,
         brand: true,
         unit: true,
+        images: true,
       },
     });
   }
@@ -266,6 +301,7 @@ export class ProductsService {
       }
 
       // Parse numbers safely
+      const purchasePrice = dto.purchasePrice !== undefined ? Number(dto.purchasePrice) : undefined;
       const sellingPrice = dto.sellingPrice !== undefined ? Number(dto.sellingPrice) : undefined;
       const minimumStockLevel = dto.minimumStockLevel !== undefined ? Number(dto.minimumStockLevel) : undefined;
       const maximumStockLevel = dto.maximumStockLevel !== undefined ? Number(dto.maximumStockLevel) : undefined;
@@ -280,6 +316,7 @@ export class ProductsService {
           categoryId: dto.categoryId,
           brandId: dto.brandId,
           unitId: dto.unitId,
+          purchasePrice: purchasePrice,
           sellingPrice: sellingPrice,
           minimumStockLevel: minimumStockLevel,
           maximumStockLevel: maximumStockLevel,
