@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -46,18 +47,42 @@ export class AuthService {
         throw new LockedAccountException(unlockTime);
       }
 
-      if (!user.is_active) {
-        const status = String(user.status);
-
-        throw new UnauthorizedException({
-          message: 'Account is inactive. Please contact support.',
-          status,
+      if (user.status === 'PENDING_APPROVAL') {
+        throw new ForbiddenException({
+          message: 'Account is pending approval.',
+          status: user.status,
           userId: user.user_id,
+          is_active: user.is_active,
+          is_verified: user.is_verified,
+        });
+      }
+
+      if (user.status === 'REJECTED') {
+        throw new ForbiddenException({
+          message: 'Account was rejected.',
+          status: user.status,
+          userId: user.user_id,
+          is_active: user.is_active,
+          is_verified: user.is_verified,
+        });
+      }
+
+      if (!user.is_active) {
+        throw new InactiveUserException({
+          status: user.status,
+          userId: user.user_id,
+          is_active: user.is_active,
+          is_verified: user.is_verified,
         });
       }
 
       if (!user.is_verified) {
-        throw new UnverifiedUserException();
+        throw new UnverifiedUserException({
+          status: user.status,
+          userId: user.user_id,
+          is_active: user.is_active,
+          is_verified: user.is_verified,
+        });
       }
 
       await this.userService.resetLoginState(email);
@@ -90,6 +115,7 @@ export class AuthService {
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
+        error instanceof ForbiddenException ||
         error instanceof InactiveUserException ||
         error instanceof UnverifiedUserException ||
         error instanceof LockedAccountException
