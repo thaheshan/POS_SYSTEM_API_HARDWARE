@@ -14,5 +14,4 @@ export interface UserRecord {
   totp_secret?: string;
   phone_number?: string;
   two_factor_enabled: boolean;
-  status?: string;
 }
