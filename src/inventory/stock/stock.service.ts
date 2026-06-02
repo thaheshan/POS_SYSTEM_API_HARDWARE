@@ -12,7 +12,7 @@ import { calculateStockStatus } from 'src/utils/stockHelper';
 
 type StockOverviewPayload = Prisma.StockGetPayload<{
   include: {
-    product: { select: { name: true; sku: true; minimumStockLevel: true } };
+    product: { select: { name: true; sku: true; minimumStockLevel: true; sellingPrice: true; category: { select: { name: true } }; images: { select: { imageUrl: true; isPrimary: true }; orderBy: { isPrimary: 'desc' }; take: 1 } } };
     warehouse: {
       select: { name: true };
     };
@@ -34,7 +34,20 @@ export class StockService {
     const rawStocks = await this.prisma.stock.findMany({
       where: whereClause,
       include: {
-        product: { select: { name: true, sku: true, minimumStockLevel: true } },
+        product: {
+          select: {
+            name: true,
+            sku: true,
+            minimumStockLevel: true,
+            sellingPrice: true,
+            category: { select: { name: true } },
+            images: {
+              select: { imageUrl: true, isPrimary: true },
+              orderBy: { isPrimary: 'desc' },
+              take: 1,
+            },
+          },
+        },
         warehouse: { select: { name: true } },
       },
     });
@@ -67,7 +80,7 @@ export class StockService {
         tenantId,
       },
       include: {
-        product: { select: { name: true, sku: true, minimumStockLevel: true } },
+        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, category: { select: { name: true } }, images: { select: { imageUrl: true, isPrimary: true }, orderBy: { isPrimary: 'desc' }, take: 1 } } },
         warehouse: { select: { name: true } },
       },
     });
@@ -85,7 +98,7 @@ export class StockService {
       `Adding manual stock: product=${dto.product_id}, warehouse=${dto.warehouse_id}, quantity=${dto.add_quantity}, user=${userId}, tenant=${tenantId}`,
     );
     return this.prisma.$transaction(async (tx) => {
-      const currentStock = await this.findStockOrFail(tx, dto, tenantId);
+      const currentStock = await this.findOrCreateStock(tx, dto, tenantId);
       this.logger.debug(
         `Current stock found: id=${currentStock.id}, quantity=${currentStock.quantity.toString()}`,
       );
@@ -106,6 +119,7 @@ export class StockService {
         userId,
         currentStock.quantity,
         updatedStock.quantity,
+        currentStock.warehouseId,
       );
       this.logger.log(
         `Stock movement log created for product=${dto.product_id}, warehouse=${dto.warehouse_id}`,
@@ -124,7 +138,7 @@ export class StockService {
       `Deducting manual stock: product=${dto.product_id}, warehouse=${dto.warehouse_id}, quantity=${dto.deduct_quantity}, user=${userId}, tenant=${tenantId}`,
     );
     return this.prisma.$transaction(async (tx) => {
-      const currentStock = await this.findStockOrFail(tx, dto, tenantId);
+      const currentStock = await this.findOrCreateStock(tx, dto, tenantId);
       this.logger.debug(
         `Current stock found: id=${currentStock.id}, quantity=${currentStock.quantity.toString()}, reserved=${currentStock.reservedQuantity.toString()}`,
       );
@@ -156,6 +170,7 @@ export class StockService {
         userId,
         currentStock.quantity,
         updatedStock.quantity,
+        currentStock.warehouseId,
       );
       this.logger.log(
         `Stock movement log created for product=${dto.product_id}, warehouse=${dto.warehouse_id}`,
@@ -167,7 +182,7 @@ export class StockService {
     });
   }
 
-  private async findStockOrFail(
+  private async findOrCreateStock(
     tx: Prisma.TransactionClient,
     dto: {
       product_id: string;
@@ -187,10 +202,50 @@ export class StockService {
     `;
 
     if (!stocks || stocks.length === 0) {
-      this.logger.error(
-        `Stock not found: product=${dto.product_id}, warehouse=${dto.warehouse_id}, tenant=${tenantId}`,
-      );
-      throw new StockNotFoundException(dto.product_id, dto.warehouse_id);
+      this.logger.warn(`Stock not found: product=${dto.product_id}, warehouse=${dto.warehouse_id}. Auto-creating...`);
+      
+      let warehouseId = dto.warehouse_id;
+
+      // Auto-create stock record if missing
+      let warehouse = await tx.warehouse.findUnique({
+        where: { id: warehouseId },
+        select: { id: true, branchId: true }
+      });
+      
+      if (!warehouse) {
+        // Try finding any active warehouse
+        warehouse = await tx.warehouse.findFirst({
+           where: { tenantId, isActive: true },
+           select: { id: true, branchId: true }
+        });
+
+        // If still no warehouse, auto-create branch and warehouse
+        if (!warehouse) {
+           let branch = await tx.branch.findFirst({ where: { tenantId, isActive: true } });
+           if (!branch) {
+              branch = await tx.branch.create({
+                 data: { tenantId, name: 'Main Branch', code: 'BR-' + Date.now(), isActive: true }
+              });
+           }
+           warehouse = await tx.warehouse.create({
+              data: { tenantId, branchId: branch.id, name: 'Main Warehouse', code: 'WH-' + Date.now(), isActive: true }
+           });
+        }
+        warehouseId = warehouse.id;
+      }
+
+      const newStock = await tx.stock.create({
+        data: {
+          tenantId,
+          productId: dto.product_id,
+          variantId: dto.variant_id || null,
+          warehouseId: warehouseId,
+          branchId: warehouse.branchId,
+          quantity: 0,
+        }
+      });
+      
+      return newStock;
     }
 
     const rawStock = stocks[0];
@@ -203,9 +258,9 @@ export class StockService {
       variantId: rawStock.variant_id,
       warehouseId: rawStock.warehouse_id,
       branchId: rawStock.branch_id,
-      quantity: new Decimal(rawStock.quantity),
-      reservedQuantity: new Decimal(rawStock.reserved_quantity), // Use snake_case here!
-      damagedQuantity: new Decimal(rawStock.damaged_quantity), // Use snake_case here!
+      quantity: new Decimal(rawStock.quantity ?? 0),
+      reservedQuantity: new Decimal(rawStock.reserved_quantity ?? 0),
+      damagedQuantity: new Decimal(rawStock.damaged_quantity ?? 0),
       lastUpdated: rawStock.last_updated,
     } as Stock;
   }
@@ -233,6 +288,7 @@ export class StockService {
     userId: string,
     beforeQty: Decimal,
     afterQty: Decimal,
+    actualWarehouseId: string,
   ) {
     let quantity: number;
     let referenceType: string;
@@ -249,14 +305,14 @@ export class StockService {
     }
 
     this.logger.debug(
-      `Creating stock movement log: product=${dto.product_id}, warehouse=${dto.warehouse_id}, quantity=${quantity}, before=${beforeQty.toString()}, after=${afterQty.toString()}, referenceType=${referenceType}`,
+      `Creating stock movement log: product=${dto.product_id}, warehouse=${actualWarehouseId}, quantity=${quantity}, before=${beforeQty.toString()}, after=${afterQty.toString()}, referenceType=${referenceType}`,
     );
     return tx.stockMovement.create({
       data: {
         tenantId,
         productId: dto.product_id,
         variantId: dto.variant_id,
-        warehouseId: dto.warehouse_id,
+        warehouseId: actualWarehouseId,
         movementType: MovementType.ADJUSTMENT,
         quantity,
         beforeQuantity: beforeQty,
@@ -331,6 +387,9 @@ export class StockService {
       warehouse_name: stock.warehouse?.name,
       product_name: stock.product.name,
       sku: stock.product.sku,
+      selling_price: Number(stock.product.sellingPrice),
+      category_name: stock.product.category?.name || 'All',
+      image_url: (stock.product as any).images?.[0]?.imageUrl ?? null,
       quantity,
       reserved_quantity: reserved,
       available_quantity: stockStatus.available_quantity,
@@ -362,7 +421,83 @@ export class StockService {
       if (isLowStockRequested) return s.low_stock === true;
       if (isOutOfStockRequested) return s.out_of_stock === true;
 
-      return true;
     });
+  }
+
+  async getStockTrend(tenantId: string, startDateStr?: string, endDateStr?: string) {
+    this.logger.log(`Generating stock trend for tenant=${tenantId}, start=${startDateStr}, end=${endDateStr}`);
+    
+    let startDate = new Date();
+    if (startDateStr) {
+      startDate = new Date(startDateStr);
+    } else {
+      startDate.setDate(startDate.getDate() - 30);
+    }
+
+    let endDate = new Date();
+    if (endDateStr) {
+      endDate = new Date(endDateStr);
+    }
+
+    const movements = await this.prisma.stockMovement.findMany({
+      where: {
+        tenantId,
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        movementType: true,
+        quantity: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    const trendMap = new Map<string, { in: number; out: number }>();
+    
+    // Calculate difference in days
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    
+    // Limit to max 90 days to keep the chart clean and high performance
+    const limitDays = Math.min(diffDays, 90);
+
+    for (let i = limitDays - 1; i >= 0; i--) {
+      const d = new Date(endDate);
+      d.setDate(d.getDate() - i);
+      const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+      trendMap.set(label, { in: 0, out: 0 });
+    }
+
+    movements.forEach((m) => {
+      const label = new Date(m.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+      if (trendMap.has(label)) {
+        const current = trendMap.get(label)!;
+        const qty = Math.abs(Number(m.quantity));
+        if (m.movementType === 'IN' || m.movementType === 'RETURN') {
+          current.in += qty;
+        } else if (m.movementType === 'OUT' || m.movementType === 'DAMAGE') {
+          current.out += qty;
+        } else if (m.movementType === 'ADJUSTMENT') {
+          const rawQty = Number(m.quantity);
+          if (rawQty > 0) {
+            current.in += rawQty;
+          } else {
+            current.out += Math.abs(rawQty);
+          }
+        }
+        trendMap.set(label, current);
+      }
+    });
+
+    return Array.from(trendMap.entries()).map(([name, val]) => ({
+      name,
+      in: Math.round(val.in),
+      out: Math.round(val.out),
+    }));
   }
 }

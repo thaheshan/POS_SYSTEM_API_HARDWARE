@@ -5,6 +5,9 @@ export interface StockOverviewResponse {
   warehouse_name: string;
   product_name: string;
   sku: string;
+  selling_price?: number;
+  category_name?: string;
+  image_url?: string | null;
   quantity: number;
   reserved_quantity: number;
   available_quantity: number;

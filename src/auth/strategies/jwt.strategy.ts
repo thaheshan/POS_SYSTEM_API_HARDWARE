@@ -6,19 +6,26 @@ import { AuthUser } from '../interfaces/auth-user.interface';
 import { InactiveUserException } from '../exceptions/inactive-user.exception';
 import { UnverifiedUserException } from '../exceptions/unverified-user.exception';
 import { UserService } from '../../user/user.service';
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger('JwtStrategy');
+
   constructor(
     private readonly configService: ConfigService,
     private readonly userService: UserService,
   ) {
+    const secret = configService.getOrThrow<string>('JWT_SECRET');
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
+      secretOrKey: secret,
     });
+    // Log first 5 chars of secret so we can verify it's loaded correctly
+    new Logger('JwtStrategy').log(
+      `JWT_SECRET loaded, first 5 chars: "${secret.substring(0, 5)}"`,
+    );
   }
 
   async validate(payload: JwtPayload): Promise<AuthUser> {

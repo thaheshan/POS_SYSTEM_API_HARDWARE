@@ -8,7 +8,7 @@ export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findById(userId: string): Promise<AuthUser | null> {
-    return this.prisma.db.user.findUnique({
+    const user = await this.prisma.db.user.findUnique({
       where: { user_id: userId },
       select: {
         user_id: true,
@@ -19,11 +19,13 @@ export class UserService {
         is_verified: true,
         tenant_id: true,
       },
-    }) as Promise<AuthUser | null>;
+    });
+
+    return user as AuthUser | null;
   }
 
   async findByEmailWithCredentials(email: string): Promise<UserRecord | null> {
-    return this.prisma.db.user.findUnique({
+    const user = await this.prisma.db.user.findUnique({
       where: { email },
       select: {
         user_id: true,
@@ -39,7 +41,9 @@ export class UserService {
         failed_login_attempts: true,
         account_locked_until: true,
       },
-    }) as Promise<UserRecord | null>;
+    });
+
+    return user as UserRecord | null;
   }
 
   async incrementFailedLoginAttempts(email: string): Promise<void> {
@@ -57,6 +61,13 @@ export class UserService {
         account_locked_until: null,
         last_login: new Date(),
       },
+    });
+  }
+
+  async updateUser(userId: string, data: Partial<any>): Promise<void> {
+    await this.prisma.db.user.update({
+      where: { user_id: userId },
+      data,
     });
   }
 }
