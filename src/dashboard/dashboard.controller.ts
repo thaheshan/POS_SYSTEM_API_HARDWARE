@@ -41,4 +41,13 @@ export class DashboardController {
   async getPendingPayments(@Req() req: any) {
     return this.dashboardService.getPendingPayments(req.user.tenant_id, req.user);
   }
+
+  @Get('summary')
+  async getSummary(
+    @Req() req: any,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.dashboardService.getSummary(req.user.tenant_id, startDate, endDate);
+  }
 }

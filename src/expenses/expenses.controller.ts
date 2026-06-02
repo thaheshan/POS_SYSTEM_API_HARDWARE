@@ -16,9 +16,14 @@ export class ExpensesController {
   }
 
   @Get()
-  async findAll(@Req() req: any, @Query('category') category?: string) {
+  async findAll(
+    @Req() req: any,
+    @Query('category') category?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     const isStaff = req.user.role === 'staff' || req.user.role === 'cashier';
     const userId = isStaff ? req.user.user_id : undefined;
-    return this.expensesService.findAll(req.user.tenant_id, userId, category);
+    return this.expensesService.findAll(req.user.tenant_id, userId, category, startDate, endDate);
   }
 }

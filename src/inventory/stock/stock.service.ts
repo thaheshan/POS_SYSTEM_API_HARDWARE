@@ -98,7 +98,7 @@ export class StockService {
       `Adding manual stock: product=${dto.product_id}, warehouse=${dto.warehouse_id}, quantity=${dto.add_quantity}, user=${userId}, tenant=${tenantId}`,
     );
     return this.prisma.$transaction(async (tx) => {
-      const currentStock = await this.findStockOrFail(tx, dto, tenantId);
+      const currentStock = await this.findOrCreateStock(tx, dto, tenantId);
       this.logger.debug(
         `Current stock found: id=${currentStock.id}, quantity=${currentStock.quantity.toString()}`,
       );
@@ -119,6 +119,7 @@ export class StockService {
         userId,
         currentStock.quantity,
         updatedStock.quantity,
+        currentStock.warehouseId,
       );
       this.logger.log(
         `Stock movement log created for product=${dto.product_id}, warehouse=${dto.warehouse_id}`,
@@ -137,7 +138,7 @@ export class StockService {
       `Deducting manual stock: product=${dto.product_id}, warehouse=${dto.warehouse_id}, quantity=${dto.deduct_quantity}, user=${userId}, tenant=${tenantId}`,
     );
     return this.prisma.$transaction(async (tx) => {
-      const currentStock = await this.findStockOrFail(tx, dto, tenantId);
+      const currentStock = await this.findOrCreateStock(tx, dto, tenantId);
       this.logger.debug(
         `Current stock found: id=${currentStock.id}, quantity=${currentStock.quantity.toString()}, reserved=${currentStock.reservedQuantity.toString()}`,
       );
@@ -169,6 +170,7 @@ export class StockService {
         userId,
         currentStock.quantity,
         updatedStock.quantity,
+        currentStock.warehouseId,
       );
       this.logger.log(
         `Stock movement log created for product=${dto.product_id}, warehouse=${dto.warehouse_id}`,
@@ -180,7 +182,7 @@ export class StockService {
     });
   }
 
-  private async findStockOrFail(
+  private async findOrCreateStock(
     tx: Prisma.TransactionClient,
     dto: {
       product_id: string;
@@ -200,10 +202,50 @@ export class StockService {
     `;
 
     if (!stocks || stocks.length === 0) {
-      this.logger.error(
-        `Stock not found: product=${dto.product_id}, warehouse=${dto.warehouse_id}, tenant=${tenantId}`,
-      );
-      throw new StockNotFoundException(dto.product_id, dto.warehouse_id);
+      this.logger.warn(`Stock not found: product=${dto.product_id}, warehouse=${dto.warehouse_id}. Auto-creating...`);
+      
+      let warehouseId = dto.warehouse_id;
+
+      // Auto-create stock record if missing
+      let warehouse = await tx.warehouse.findUnique({
+        where: { id: warehouseId },
+        select: { id: true, branchId: true }
+      });
+      
+      if (!warehouse) {
+        // Try finding any active warehouse
+        warehouse = await tx.warehouse.findFirst({
+           where: { tenantId, isActive: true },
+           select: { id: true, branchId: true }
+        });
+
+        // If still no warehouse, auto-create branch and warehouse
+        if (!warehouse) {
+           let branch = await tx.branch.findFirst({ where: { tenantId, isActive: true } });
+           if (!branch) {
+              branch = await tx.branch.create({
+                 data: { tenantId, name: 'Main Branch', code: 'BR-' + Date.now(), isActive: true }
+              });
+           }
+           warehouse = await tx.warehouse.create({
+              data: { tenantId, branchId: branch.id, name: 'Main Warehouse', code: 'WH-' + Date.now(), isActive: true }
+           });
+        }
+        warehouseId = warehouse.id;
+      }
+
+      const newStock = await tx.stock.create({
+        data: {
+          tenantId,
+          productId: dto.product_id,
+          variantId: dto.variant_id || null,
+          warehouseId: warehouseId,
+          branchId: warehouse.branchId,
+          quantity: 0,
+        }
+      });
+      
+      return newStock;
     }
 
     const rawStock = stocks[0];
@@ -217,8 +259,8 @@ export class StockService {
       warehouseId: rawStock.warehouse_id,
       branchId: rawStock.branch_id,
       quantity: new Decimal(rawStock.quantity ?? 0),
-      reservedQuantity: new Decimal(rawStock.reserved_quantity ?? 0), // Use snake_case here!
-      damagedQuantity: new Decimal(rawStock.damaged_quantity ?? 0), // Use snake_case here!
+      reservedQuantity: new Decimal(rawStock.reserved_quantity ?? 0),
+      damagedQuantity: new Decimal(rawStock.damaged_quantity ?? 0),
       lastUpdated: rawStock.last_updated,
     } as Stock;
   }
@@ -246,6 +288,7 @@ export class StockService {
     userId: string,
     beforeQty: Decimal,
     afterQty: Decimal,
+    actualWarehouseId: string,
   ) {
     let quantity: number;
     let referenceType: string;
@@ -262,14 +305,14 @@ export class StockService {
     }
 
     this.logger.debug(
-      `Creating stock movement log: product=${dto.product_id}, warehouse=${dto.warehouse_id}, quantity=${quantity}, before=${beforeQty.toString()}, after=${afterQty.toString()}, referenceType=${referenceType}`,
+      `Creating stock movement log: product=${dto.product_id}, warehouse=${actualWarehouseId}, quantity=${quantity}, before=${beforeQty.toString()}, after=${afterQty.toString()}, referenceType=${referenceType}`,
     );
     return tx.stockMovement.create({
       data: {
         tenantId,
         productId: dto.product_id,
         variantId: dto.variant_id,
-        warehouseId: dto.warehouse_id,
+        warehouseId: actualWarehouseId,
         movementType: MovementType.ADJUSTMENT,
         quantity,
         beforeQuantity: beforeQty,

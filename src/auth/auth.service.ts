@@ -166,13 +166,19 @@ export class AuthService {
       throw new BadRequestException('Email already registered');
     }
 
-    // Find the role by name for this shop
-    const roleName = (dto.role || 'CASHIER').toUpperCase();
+    // Find the role by name or ID for this shop
+    const roleInput = dto.role || 'CASHIER';
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roleInput);
+    
     const roleRecord = await this.prisma.role.findFirst({
-      where: { tenant_id: shop.id, name: roleName }
+      where: { 
+        tenant_id: shop.id, 
+        ...(isUuid ? { id: roleInput } : { name: roleInput.toUpperCase() })
+      }
     });
+    
     if (!roleRecord) {
-      throw new BadRequestException(`Role ${roleName} not found for this shop`);
+      throw new BadRequestException(`Role ${roleInput} not found for this shop`);
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
