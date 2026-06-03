@@ -6,7 +6,7 @@ import {
   IsUUID,
   Matches,
 } from 'class-validator';
-import { Role } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { IRegisterStaffRequest } from '../interfaces/register-staff.interface';
 import { regexConstants } from '../../utils/regex.util';
 

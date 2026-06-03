@@ -8,48 +8,73 @@ export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findById(userId: string): Promise<AuthUser | null> {
-    return this.prisma.db.user.findUnique({
-      where: { user_id: userId },
+    const user = await this.prisma.db.user.findUnique({
+      where: { id: userId },
       select: {
-        user_id: true,
+        id: true,
         email: true,
         role: true,
-        is_active: true,
-        is_verified: true,
-        tenant_id: true,
-        totp_secret: true,
-        phone_number: true,
-        two_factor_enabled: true,
+        isActive: true,
+        isVerified: true,
+        tenantId: true,
       },
-    }) as Promise<AuthUser | null>;
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      user_id: user.id,
+      email: user.email,
+      role: user.role,
+      is_active: user.isActive,
+      is_verified: user.isVerified,
+      tenant_id: user.tenantId,
+    };
   }
 
   async findByEmailWithCredentials(email: string): Promise<UserRecord | null> {
-    return this.prisma.db.user.findUnique({
+    const user = await this.prisma.db.user.findUnique({
       where: { email },
       select: {
-        user_id: true,
+        id: true,
         email: true,
-        password_hash: true,
-        first_name: true,
-        last_name: true,
+        passwordHash: true,
+        firstName: true,
+        lastName: true,
         role: true,
-        is_active: true,
-        is_verified: true,
-        tenant_id: true,
-        failed_login_attempts: true,
-        account_locked_until: true,
-        totp_secret: true,
-        phone_number: true,
-        two_factor_enabled: true,
+        isActive: true,
+        isVerified: true,
+        tenantId: true,
+        failedLoginAttempts: true,
+        accountLockedUntil: true,
       },
-    }) as Promise<UserRecord | null>;
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      user_id: user.id,
+      email: user.email,
+      password_hash: user.passwordHash,
+      first_name: user.firstName,
+      last_name: user.lastName,
+      role: user.role,
+      is_active: user.isActive,
+      is_verified: user.isVerified,
+      tenant_id: user.tenantId,
+      failed_login_attempts: user.failedLoginAttempts,
+      account_locked_until: user.accountLockedUntil,
+    };
   }
 
   async incrementFailedLoginAttempts(email: string): Promise<void> {
     await this.prisma.db.user.update({
       where: { email },
-      data: { failed_login_attempts: { increment: 1 } },
+      data: { failedLoginAttempts: { increment: 1 } },
     });
   }
 
@@ -57,17 +82,10 @@ export class UserService {
     await this.prisma.db.user.update({
       where: { email },
       data: {
-        failed_login_attempts: 0,
-        account_locked_until: null,
-        last_login: new Date(),
+        failedLoginAttempts: 0,
+        accountLockedUntil: null,
+        lastLogin: new Date(),
       },
-    });
-  }
-
-  async updateUser(userId: string, data: Partial<any>): Promise<void> {
-    await this.prisma.db.user.update({
-      where: { user_id: userId },
-      data,
     });
   }
 }

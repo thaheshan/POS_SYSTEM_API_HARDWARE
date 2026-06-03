@@ -226,34 +226,34 @@ export class StockMovementsService {
       for (const item of items) {
         const quantity = new Prisma.Decimal(item.quantity);
 
-        // Get current stock at source warehouse to capture before/after quantities
-        const fromStockBefore = await tx.stock.findFirst({
+        // CRITICAL FIX: Retrieve stock records with ID for atomic operations
+        // This avoids TOCTOU race condition by using Prisma's atomic decrement/increment
+        const fromStockRecord = await tx.stock.findFirst({
           where: {
             tenantId,
             productId: item.productId,
             warehouseId: fromWarehouseId,
             variantId: item.variantId || undefined,
           },
-          select: { quantity: true },
         });
 
-        const fromQuantityBefore =
-          fromStockBefore?.quantity || new Prisma.Decimal(0);
-        const fromQuantityAfter = fromQuantityBefore.minus(quantity);
-
-        // Get current stock at destination warehouse
-        const toStockBefore = await tx.stock.findFirst({
+        const toStockRecord = await tx.stock.findFirst({
           where: {
             tenantId,
             productId: item.productId,
             warehouseId: toWarehouseId,
             variantId: item.variantId || undefined,
           },
-          select: { quantity: true },
         });
 
+        // Get current quantities for audit trail BEFORE atomic operations
+        const fromQuantityBefore =
+          fromStockRecord?.quantity || new Prisma.Decimal(0);
         const toQuantityBefore =
-          toStockBefore?.quantity || new Prisma.Decimal(0);
+          toStockRecord?.quantity || new Prisma.Decimal(0);
+
+        // Calculate expected after quantities for audit trail
+        const fromQuantityAfter = fromQuantityBefore.minus(quantity);
         const toQuantityAfter = toQuantityBefore.plus(quantity);
 
         // WRITE 1: Movement record for source warehouse (audit trail)
@@ -290,61 +290,42 @@ export class StockMovementsService {
           },
         });
 
-        // WRITE 3: Update stock at source warehouse (decrease)
-        // Find existing stock record
-        const fromStock = await tx.stock.findFirst({
-          where: {
-            tenantId,
-            productId: item.productId,
-            variantId: item.variantId || undefined,
-            warehouseId: fromWarehouseId,
-          },
-        });
-
-        if (fromStock) {
-          // Update existing
+        // WRITE 3: Atomically decrement source warehouse stock
+        // ATOMIC OPERATION: Prisma's decrement is safe from TOCTOU race conditions
+        if (fromStockRecord) {
           await tx.stock.update({
-            where: { id: fromStock.id },
-            data: { quantity: fromQuantityAfter },
+            where: { id: fromStockRecord.id },
+            data: { quantity: { decrement: quantity } },
           });
         } else {
-          // Create new
+          // If stock doesn't exist, create with negative adjustment (edge case)
           await tx.stock.create({
             data: {
               tenantId,
               productId: item.productId,
               variantId: item.variantId || undefined,
               warehouseId: fromWarehouseId,
-              quantity: fromQuantityAfter,
+              quantity: quantity.negated(),
             },
           });
         }
 
-        // WRITE 4: Update stock at destination warehouse (increase)
-        const toStock = await tx.stock.findFirst({
-          where: {
-            tenantId,
-            productId: item.productId,
-            variantId: item.variantId || undefined,
-            warehouseId: toWarehouseId,
-          },
-        });
-
-        if (toStock) {
-          // Update existing
+        // WRITE 4: Atomically increment destination warehouse stock
+        // ATOMIC OPERATION: Prisma's increment is safe from TOCTOU race conditions
+        if (toStockRecord) {
           await tx.stock.update({
-            where: { id: toStock.id },
-            data: { quantity: toQuantityAfter },
+            where: { id: toStockRecord.id },
+            data: { quantity: { increment: quantity } },
           });
         } else {
-          // Create new
+          // If stock doesn't exist, create with the transfer quantity
           await tx.stock.create({
             data: {
               tenantId,
               productId: item.productId,
               variantId: item.variantId || undefined,
               warehouseId: toWarehouseId,
-              quantity: toQuantityAfter,
+              quantity,
             },
           });
         }

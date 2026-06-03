@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -43,49 +44,37 @@ export class DashboardQueryService {
   }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0];
 
-    // Build WHERE clause based on filter type
-    let whereClause = `WHERE si.tenant_id = ${this.escape(filter.tenantId)}`;
-    if (filter.branchId) {
-      whereClause += ` AND si.branch_id = ${this.escape(filter.branchId)}`;
-    }
-    if (filter.cashierId) {
-      whereClause += ` AND si.cashier_id = ${this.escape(filter.cashierId)}`;
-    }
-    whereClause += ` AND DATE(si.invoice_date) = DATE(${this.escape(todayStr)}::date)`;
+    // Safe parameterized query using Prisma.sql
+    const invoices = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT 
+        COUNT(*) as count,
+        SUM(CAST(total_amount AS DECIMAL(12,2))) as revenue,
+        SUM(CAST(tax_amount AS DECIMAL(12,2))) as vat,
+        COUNT(CASE WHEN payment_status = 'unpaid' OR payment_status = 'partial' THEN 1 END) as pending_count
+      FROM sales_invoices
+      WHERE tenant_id = ${filter.tenantId}
+        ${filter.branchId ? Prisma.sql`AND branch_id = ${filter.branchId}` : Prisma.empty}
+        ${filter.cashierId ? Prisma.sql`AND cashier_id = ${filter.cashierId}` : Prisma.empty}
+        AND DATE(invoice_date) = ${today}
+    `);
 
-    const [invoices, stock] = (await Promise.all([
-      this.prisma.$queryRawUnsafe(`
-        SELECT 
-          COUNT(*) as count,
-          SUM(CAST(si.total_amount AS DECIMAL(12,2))) as revenue,
-          SUM(CAST(si.tax_amount AS DECIMAL(12,2))) as vat,
-          COUNT(CASE WHEN si.payment_status = 'unpaid' OR si.payment_status = 'partial' THEN 1 END) as pending_count
-        FROM sales_invoices si
-        ${whereClause}
-      `),
-      this.prisma.$queryRawUnsafe(`
-        SELECT SUM(CAST(s.quantity * COALESCE(p.purchase_price, 0) AS DECIMAL(12,2))) as total_value
-        FROM stock s
-        JOIN products p ON s.product_id = p.product_id
-        WHERE s.tenant_id = ${this.escape(filter.tenantId)}
-      `),
-    ])) as any[][];
+    const stock = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT SUM(CAST(s.quantity * COALESCE(p.purchase_price, 0) AS DECIMAL(12,2))) as total_value
+      FROM stock s
+      JOIN products p ON s.product_id = p.product_id
+      WHERE s.tenant_id = ${filter.tenantId}
+    `);
 
-    const cogsClause = filter.branchId
-      ? `AND si.branch_id = ${this.escape(filter.branchId)}`
-      : '';
-    const cashierClause = filter.cashierId
-      ? `AND si.cashier_id = ${this.escape(filter.cashierId)}`
-      : '';
-
-    const cogsResult = (await this.prisma.$queryRawUnsafe(`
-      SELECT SUM(CAST(CAST(sii.cost_price AS DECIMAL(12,2)) * CAST(sii.quantity AS DECIMAL(12,2)) AS DECIMAL(12,2))) as cogs
+    const cogsResult = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT SUM(CAST(CAST(cost_price AS DECIMAL(12,2)) * CAST(quantity AS DECIMAL(12,2)) AS DECIMAL(12,2))) as cogs
       FROM sales_invoice_items sii
       JOIN sales_invoices si ON sii.invoice_id = si.invoice_id
-      WHERE si.tenant_id = ${this.escape(filter.tenantId)} ${cogsClause} ${cashierClause} AND DATE(si.invoice_date) = DATE(${this.escape(todayStr)}::date)
-    `)) as any[];
+      WHERE si.tenant_id = ${filter.tenantId}
+        ${filter.branchId ? Prisma.sql`AND si.branch_id = ${filter.branchId}` : Prisma.empty}
+        ${filter.cashierId ? Prisma.sql`AND si.cashier_id = ${filter.cashierId}` : Prisma.empty}
+        AND DATE(si.invoice_date) = ${today}
+    `);
 
     const totalRevenue = Number(invoices[0]?.revenue || 0);
     const cogs = Number(cogsResult[0]?.cogs || 0);
@@ -109,19 +98,14 @@ export class DashboardQueryService {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-    let whereClause = `WHERE tenant_id = ${this.escape(tenantId)}`;
-    if (branchId) {
-      whereClause += ` AND branch_id = ${this.escape(branchId)}`;
-    }
-    whereClause += ` AND DATE(invoice_date) = DATE(${this.escape(yesterdayStr)}::date)`;
-
-    const result = (await this.prisma.$queryRawUnsafe(`
+    const result = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT SUM(CAST(total_amount AS DECIMAL(12,2))) as revenue
       FROM sales_invoices
-      ${whereClause}
-    `)) as any[];
+      WHERE tenant_id = ${tenantId}
+        ${branchId ? Prisma.sql`AND branch_id = ${branchId}` : Prisma.empty}
+        AND DATE(invoice_date) = ${yesterday}
+    `);
 
     return Number(result[0]?.revenue || 0);
   }
@@ -130,15 +114,15 @@ export class DashboardQueryService {
    * Get count of products with low stock
    */
   async getLowStockCount(tenantId: string) {
-    const result = (await this.prisma.$queryRawUnsafe(`
+    const result = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT COUNT(*) as count
       FROM stock s
       JOIN products p ON s.product_id = p.product_id
-      WHERE s.tenant_id = ${this.escape(tenantId)}
+      WHERE s.tenant_id = ${tenantId}
         AND p.minimum_stock_level IS NOT NULL
         AND s.quantity <= p.minimum_stock_level
         AND s.quantity > 0
-    `)) as any[];
+    `);
 
     return Number(result[0]?.count || 0);
   }
@@ -147,11 +131,11 @@ export class DashboardQueryService {
    * Get count of products with zero stock
    */
   async getOutOfStockCount(tenantId: string) {
-    const result = (await this.prisma.$queryRawUnsafe(`
+    const result = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT COUNT(*) as count
       FROM stock
-      WHERE tenant_id = ${this.escape(tenantId)} AND quantity = 0
-    `)) as any[];
+      WHERE tenant_id = ${tenantId} AND quantity = 0
+    `);
 
     return Number(result[0]?.count || 0);
   }
@@ -166,36 +150,22 @@ export class DashboardQueryService {
   }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0];
 
-    let joinCashier = '';
-    let whereCashier = '';
-    if (filter.cashierId) {
-      joinCashier = 'JOIN sales_invoices si ON sii.invoice_id = si.invoice_id';
-      whereCashier = ` AND si.cashier_id = ${this.escape(filter.cashierId)}`;
-    }
-
-    let query = `
+    const results = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT 
         p.product_name as label,
         SUM(CAST(sii.line_total AS DECIMAL(12,2))) as value
       FROM sales_invoice_items sii
       JOIN products p ON sii.product_id = p.product_id
-      ${filter.cashierId ? joinCashier : 'JOIN sales_invoices si ON sii.invoice_id = si.invoice_id'}
-      WHERE si.tenant_id = ${this.escape(filter.tenantId)}
-    `;
-
-    if (filter.branchId) {
-      query += ` AND si.branch_id = ${this.escape(filter.branchId)}`;
-    }
-    query += whereCashier;
-    query += ` AND DATE(si.invoice_date) = DATE(${this.escape(todayStr)}::date)
+      JOIN sales_invoices si ON sii.invoice_id = si.invoice_id
+      WHERE si.tenant_id = ${filter.tenantId}
+        ${filter.branchId ? Prisma.sql`AND si.branch_id = ${filter.branchId}` : Prisma.empty}
+        ${filter.cashierId ? Prisma.sql`AND si.cashier_id = ${filter.cashierId}` : Prisma.empty}
+        AND DATE(si.invoice_date) = ${today}
       GROUP BY p.product_id, p.product_name
       ORDER BY value DESC
       LIMIT 5
-    `;
-
-    const results = (await this.prisma.$queryRawUnsafe(query)) as any[];
+    `);
 
     return results.map((r: any) => ({
       label: r.label,
@@ -213,36 +183,22 @@ export class DashboardQueryService {
   }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0];
 
-    let joinCashier = '';
-    let whereCashier = '';
-    if (filter.cashierId) {
-      joinCashier = 'JOIN sales_invoices si ON sii.invoice_id = si.invoice_id';
-      whereCashier = ` AND si.cashier_id = ${this.escape(filter.cashierId)}`;
-    }
-
-    let query = `
+    const results = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT 
         c.category_name as label,
         SUM(CAST(sii.line_total AS DECIMAL(12,2))) as value
       FROM sales_invoice_items sii
       JOIN products p ON sii.product_id = p.product_id
       JOIN categories c ON p.category_id = c.category_id
-      ${filter.cashierId ? joinCashier : 'JOIN sales_invoices si ON sii.invoice_id = si.invoice_id'}
-      WHERE si.tenant_id = ${this.escape(filter.tenantId)}
-    `;
-
-    if (filter.branchId) {
-      query += ` AND si.branch_id = ${this.escape(filter.branchId)}`;
-    }
-    query += whereCashier;
-    query += ` AND DATE(si.invoice_date) = DATE(${this.escape(todayStr)}::date)
+      JOIN sales_invoices si ON sii.invoice_id = si.invoice_id
+      WHERE si.tenant_id = ${filter.tenantId}
+        ${filter.branchId ? Prisma.sql`AND si.branch_id = ${filter.branchId}` : Prisma.empty}
+        ${filter.cashierId ? Prisma.sql`AND si.cashier_id = ${filter.cashierId}` : Prisma.empty}
+        AND DATE(si.invoice_date) = ${today}
       GROUP BY c.category_id, c.category_name
       ORDER BY value DESC
-    `;
-
-    const results = (await this.prisma.$queryRawUnsafe(query)) as any[];
+    `);
 
     const total = results.reduce(
       (sum: number, r: any) => sum + Number(r.value || 0),
@@ -265,14 +221,8 @@ export class DashboardQueryService {
   async getStaffPerformance(filter: { tenantId: string; branchId?: string }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0];
 
-    let branchFilter = '';
-    if (filter.branchId) {
-      branchFilter = ` AND si.branch_id = ${this.escape(filter.branchId)}`;
-    }
-
-    const results = (await this.prisma.$queryRawUnsafe(`
+    const results = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT 
         si.cashier_id,
         COALESCE(u.first_name || ' ' || u.last_name, 'Unknown') as name,
@@ -280,10 +230,12 @@ export class DashboardQueryService {
         SUM(CAST(si.total_amount AS DECIMAL(12,2))) as revenue
       FROM sales_invoices si
       LEFT JOIN users u ON si.cashier_id = u.user_id
-      WHERE si.tenant_id = ${this.escape(filter.tenantId)} ${branchFilter} AND DATE(si.invoice_date) = DATE(${this.escape(todayStr)}::date)
+      WHERE si.tenant_id = ${filter.tenantId}
+        ${filter.branchId ? Prisma.sql`AND si.branch_id = ${filter.branchId}` : Prisma.empty}
+        AND DATE(si.invoice_date) = ${today}
       GROUP BY si.cashier_id, u.first_name, u.last_name
       ORDER BY revenue DESC
-    `)) as any[];
+    `);
 
     return results.map((r: any) => ({
       cashier_id: r.cashier_id,
@@ -298,21 +250,18 @@ export class DashboardQueryService {
    */
   async getYtdMetrics(tenantId: string, branchId?: string) {
     const currentYear = new Date().getFullYear();
-    const ytdStart = `${currentYear}-01-01`;
+    const ytdStart = new Date(currentYear, 0, 1);
 
-    let branchFilter = '';
-    if (branchId) {
-      branchFilter = ` AND branch_id = ${this.escape(branchId)}`;
-    }
-
-    const results = (await this.prisma.$queryRawUnsafe(`
+    const results = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT 
         SUM(CAST(total_revenue AS DECIMAL(12,2))) as ytd_revenue,
         SUM(CAST(vat_collected AS DECIMAL(12,2))) as ytd_vat,
         SUM(CAST(net_profit AS DECIMAL(12,2))) as ytd_profit
       FROM reports_generated
-      WHERE tenant_id = ${this.escape(tenantId)} ${branchFilter} AND report_date >= DATE(${this.escape(ytdStart)}::date)
-    `)) as any[];
+      WHERE tenant_id = ${tenantId}
+        ${branchId ? Prisma.sql`AND branch_id = ${branchId}` : Prisma.empty}
+        AND report_date >= ${ytdStart}
+    `);
 
     return {
       ytdRevenue: Number(results[0]?.ytd_revenue || 0),
@@ -331,25 +280,18 @@ export class DashboardQueryService {
   }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0];
 
-    let whereClause = `WHERE tenant_id = ${this.escape(filter.tenantId)}`;
-    if (filter.branchId) {
-      whereClause += ` AND branch_id = ${this.escape(filter.branchId)}`;
-    }
-    if (filter.cashierId) {
-      whereClause += ` AND cashier_id = ${this.escape(filter.cashierId)}`;
-    }
-    whereClause += ` AND DATE(invoice_date) = DATE(${this.escape(todayStr)}::date)`;
-
-    const results = (await this.prisma.$queryRawUnsafe(`
+    const results = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT 
         sale_type,
         SUM(CAST(total_amount AS DECIMAL(12,2))) as amount
       FROM sales_invoices
-      ${whereClause}
+      WHERE tenant_id = ${filter.tenantId}
+        ${filter.branchId ? Prisma.sql`AND branch_id = ${filter.branchId}` : Prisma.empty}
+        ${filter.cashierId ? Prisma.sql`AND cashier_id = ${filter.cashierId}` : Prisma.empty}
+        AND DATE(invoice_date) = ${today}
       GROUP BY sale_type
-    `)) as any[];
+    `);
 
     const breakdown = { cash: 0, card: 0, credit: 0 };
     let total = 0;
@@ -372,12 +314,5 @@ export class DashboardQueryService {
         credit: total > 0 ? ((breakdown.credit / total) * 100).toFixed(2) : '0',
       },
     };
-  }
-
-  /**
-   * Utility: Safely escape string values for raw SQL queries
-   */
-  private escape(value: string): string {
-    return `'${value.replace(/'/g, "''")}'`;
   }
 }

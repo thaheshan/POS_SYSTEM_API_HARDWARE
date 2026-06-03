@@ -587,6 +587,56 @@ export class QuotationsService {
         }),
       );
 
+      // === PHASE 3: Deduct Stock & Record Movements (CRITICAL FIX) ===
+      // Record stock movements for each item being invoiced
+      await Promise.all(
+        quotation.items.map(async (qItem) => {
+          const itemQuantity = new Prisma.Decimal(qItem.quantity || 0);
+
+          // Find the stock record for this product
+          const stockRecord = await tx.stock.findFirst({
+            where: {
+              tenantId,
+              productId: qItem.productId,
+              variantId: qItem.variantId || undefined,
+            },
+          });
+
+          if (!stockRecord) {
+            throw new BadRequestException(
+              `STOCK_NOT_FOUND`,
+              `No stock record found for product ${qItem.productName}`,
+            );
+          }
+
+          const quantityBefore = stockRecord.quantity;
+          const quantityAfter = quantityBefore.minus(itemQuantity);
+
+          // Create stock movement record for audit trail
+          await tx.stockMovement.create({
+            data: {
+              tenantId,
+              productId: qItem.productId,
+              variantId: qItem.variantId || undefined,
+              warehouseId: stockRecord.warehouseId || undefined,
+              movementType: 'out',
+              quantity: itemQuantity.negated(), // Negative = stock decrease
+              beforeQuantity: quantityBefore,
+              afterQuantity: quantityAfter,
+              referenceType: 'SalesInvoice',
+              referenceId: newInvoice.id,
+              createdBy: quotation.createdBy || 'system',
+            },
+          });
+
+          // Atomically decrement stock
+          await tx.stock.update({
+            where: { id: stockRecord.id },
+            data: { quantity: { decrement: itemQuantity } },
+          });
+        }),
+      );
+
       // Update quotation status to accepted
       await tx.quotation.update({
         where: { id: quotationId },

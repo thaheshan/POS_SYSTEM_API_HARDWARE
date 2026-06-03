@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AddStockDto, DeductStockDto } from './dto/stock_manual.dto';
 import { StockNotFoundException } from '../exceptions/stock_not_found.exception';
-import { MovementType, Prisma, Stock } from '@prisma/client';
+import { StockMovementType, Prisma, Stock } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import { InsufficientStockException } from '../exceptions/stock_bad_request.exception';
 import { RawStockRow } from '../interfaces/row_stock.interface';
@@ -257,7 +257,7 @@ export class StockService {
         productId: dto.product_id,
         variantId: dto.variant_id,
         warehouseId: dto.warehouse_id,
-        movementType: MovementType.ADJUSTMENT,
+        movementType: StockMovementType.adjustment,
         quantity,
         beforeQuantity: beforeQty,
         afterQuantity: afterQty,

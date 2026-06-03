@@ -6,11 +6,8 @@ import { AnalyticsService } from './analytics.service';
 import { ReportExportService } from './report-export.service';
 import { WeeklyReportCronService } from './cron/weekly-report.cron';
 
-  
-
-
 @Module({
-  imports: [DailyModule, EndOfDayModule]
+  imports: [DailyModule, EndOfDayModule],
   controllers: [AnalyticsController],
   providers: [AnalyticsService, ReportExportService, WeeklyReportCronService],
 })

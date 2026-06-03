@@ -50,7 +50,9 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      return { message: 'If this email is registered, a reset code will be sent.' };
+      return {
+        message: 'If this email is registered, a reset code will be sent.',
+      };
     }
 
     const code = crypto.randomInt(100000, 999999).toString();
@@ -213,7 +215,7 @@ export class AuthService {
           message: '2FA required',
           data: {
             requires_2fa: true,
-            method: user.totp_secret ? 'totp' : 'sms',
+            method: user.twoFactorSecret ? 'totp' : 'sms',
             temp_token,
           },
         };
@@ -227,7 +229,9 @@ export class AuthService {
       };
 
       const access_token = await this.jwtService.signAsync(payload);
-      const refresh_token = await this.jwtService.signAsync(payload, { expiresIn: '7d' });
+      const refresh_token = await this.jwtService.signAsync(payload, {
+        expiresIn: '7d',
+      });
 
       return {
         statusCode: 200,
@@ -285,7 +289,7 @@ export class AuthService {
     }
 
     if (token) {
-      if (!user.totp_secret) {
+      if (!user.twoFactorSecret) {
         throw new BadRequestException('TOTP is not configured for this user');
       }
       await this.twoFactorAuthService.verifyTOTP(payload.sub, token);
@@ -295,7 +299,9 @@ export class AuthService {
       throw new BadRequestException('OTP or TOTP token is required');
     }
 
-    const loginTokens = await this.twoFactorAuthService.issueLoginTokens(payload.sub);
+    const loginTokens = await this.twoFactorAuthService.issueLoginTokens(
+      payload.sub,
+    );
     return {
       statusCode: 200,
       message: 'Login successful',
