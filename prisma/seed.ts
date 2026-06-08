@@ -4,321 +4,443 @@ import {
   SaleType,
   PaymentStatus,
   InvoiceStatus,
+  SubscriptionPaymentStatus,
+  StaffStatus,
+  Product,
 } from '@prisma/client';
-import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
-import * as dotenv from 'dotenv';
 
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
+import * as bcrypt from 'bcrypt';
+import * as dotenv from 'dotenv';
 dotenv.config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
 });
-
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-async function main() {
-  console.log('Seeding database...');
+function randomDate(start: Date, end: Date) {
+  return new Date(
+    start.getTime() + Math.random() * (end.getTime() - start.getTime()),
+  );
+}
 
-  // 1) Shop (no unique in schema, so use findFirst fallback)
+function randomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+async function main() {
+  console.log('Starting seed...');
+
+  // Pull secure credentials from environment variables
+  const ownerEmail = process.env.SEED_OWNER_EMAIL || 'owner@test.com';
+  const ownerPassword = process.env.SEED_OWNER_PASSWORD || 'defaultDev123!';
+
+  // 1. Create or Find Shop (findFirst fallback because Shop lacks a unique constraint)
   let shop = await prisma.shop.findFirst({
-    where: {
-      name: 'Test Supermart',
-      businessRegistration: 'REG-12345',
-    },
+    where: { name: 'FUTURA HARDWARE' },
   });
 
   if (!shop) {
     shop = await prisma.shop.create({
       data: {
-        name: 'Test Supermart',
-        businessRegistration: 'REG-12345',
+        name: 'FUTURA HARDWARE',
+        businessRegistration: 'BR-12345',
+        email: ownerEmail,
+        subscriptionPlan: 'PRO',
+        paymentStatus: SubscriptionPaymentStatus.PAID,
       },
     });
+    console.log(`Created shop: ${shop.name}`);
+  } else {
+    console.log(`Found existing shop: ${shop.name}`);
   }
 
-  console.log('Shop ready: ' + shop.id);
-
-  // 2) User (email is unique)
-  const user = await prisma.user.upsert({
-    where: { email: 'admin@test.com' },
-    update: {
-      tenant_id: shop.id,
-      first_name: 'System',
-      last_name: 'Admin',
-      role: 'admin',
-      is_active: true,
-      is_verified: true,
-    },
-    create: {
-      tenant_id: shop.id,
-      email: 'admin@test.com',
-      password_hash:
-        '$2a$12$uZp7qIeGIQ.8/w7/.MeNfuZf4R8ljI4EDhDXZ/3edF1St52cP6mg2',
-      first_name: 'System',
-      last_name: 'Admin',
-      role: 'admin',
-      is_active: true,
-      is_verified: true,
-    },
-  });
-
-  console.log('User ready: ' + user.user_id);
-
-  // 3) Branch (code is unique)
+  // 2. Create or Update Branch (upsert using unique code)
   const branch = await prisma.branch.upsert({
-    where: { code: 'BR-001' },
-    update: {
-      tenantId: shop.id,
-      name: 'Main HQ',
-      managerId: user.user_id,
-      isActive: true,
-    },
-    create: {
-      tenantId: shop.id,
-      name: 'Main HQ',
-      code: 'BR-001',
-      managerId: user.user_id,
-      isActive: true,
-    },
+    where: { code: 'MB-001' },
+    update: { tenantId: shop.id, name: 'Main Branch' },
+    create: { tenantId: shop.id, name: 'Main Branch', code: 'MB-001' },
   });
 
-  console.log('Branch ready: ' + branch.id);
-
-  // 4) Warehouse (code is unique)
+  // 3. Create or Update Warehouse (upsert using unique code)
   const warehouse = await prisma.warehouse.upsert({
     where: { code: 'WH-001' },
     update: {
       tenantId: shop.id,
       branchId: branch.id,
-      name: 'Central Warehouse',
-      isActive: true,
+      name: 'Main Store',
+      address: '123 Main Street',
     },
     create: {
       tenantId: shop.id,
       branchId: branch.id,
-      name: 'Central Warehouse',
+      name: 'Main Store',
       code: 'WH-001',
-      isActive: true,
+      address: '123 Main Street',
     },
   });
 
-  console.log('Warehouse ready: ' + warehouse.id);
-
-  // 5) Category (composite unique: tenantId + categoryCode)
-  const category = await prisma.category.upsert({
-    where: {
-      tenantId_categoryCode: {
-        tenantId: shop.id,
-        categoryCode: 'ELEC',
-      },
-    },
-    update: {
-      categoryName: 'Electronics',
-      isActive: true,
-    },
-    create: {
-      tenantId: shop.id,
-      categoryName: 'Electronics',
-      categoryCode: 'ELEC',
-      isActive: true,
-    },
+  // 4. Create or Find the OWNER Role
+  let ownerRole = await prisma.role.findFirst({
+    where: { name: 'OWNER', tenant_id: shop.id },
   });
 
-  console.log('Category ready: ' + category.id);
-
-  // 6) Product (composite unique: tenantId + sku)
-  const product = await prisma.product.upsert({
-    where: {
-      tenantId_sku: {
-        tenantId: shop.id,
-        sku: 'WM-001',
-      },
-    },
-    update: {
-      categoryId: category.id,
-      name: 'Wireless Mouse',
-      sellingPrice: 25.99,
-      minimumStockLevel: 10,
-      taxCategory: TaxCategory.STANDARD_VAT,
-      isActive: true,
-      createdBy: user.user_id,
-    },
-    create: {
-      tenantId: shop.id,
-      categoryId: category.id,
-      name: 'Wireless Mouse',
-      sku: 'WM-001',
-      sellingPrice: 25.99,
-      minimumStockLevel: 10,
-      taxCategory: TaxCategory.STANDARD_VAT,
-      isActive: true,
-      createdBy: user.user_id,
-    },
-  });
-
-  console.log('Product ready: ' + product.id);
-
-  // 7) Stock (avoid upsert on composite key with nullable variantId)
-  let stock = await prisma.stock.findFirst({
-    where: {
-      productId: product.id,
-      variantId: null,
-      warehouseId: warehouse.id,
-    },
-  });
-
-  if (!stock) {
-    stock = await prisma.stock.create({
-      data: {
-        tenantId: shop.id,
-        productId: product.id,
-        variantId: null,
-        warehouseId: warehouse.id,
-        branchId: branch.id,
-        quantity: 10,
-        reservedQuantity: 0,
-        damagedQuantity: 0,
-      },
+  if (!ownerRole) {
+    ownerRole = await prisma.role.create({
+      data: { name: 'OWNER', tenant_id: shop.id, permissions: {} },
     });
-  } else {
-    stock = await prisma.stock.update({
-      where: { id: stock.id },
-      data: {
-        tenantId: shop.id,
-        branchId: branch.id,
-        quantity: 10,
-        reservedQuantity: 0,
-        damagedQuantity: 0,
-      },
-    });
+    console.log(`Created role: ${ownerRole.name}`);
   }
 
-  console.log('Stock ready: ' + stock.id);
-
-  // 8) Customer (no unique in schema, so use findFirst fallback)
-  let customer = await prisma.customer.findFirst({
-    where: {
-      tenantId: shop.id,
-      name: 'John Doe',
-      phone: '555-0199',
-    },
-  });
-
-  if (!customer) {
-    customer = await prisma.customer.create({
-      data: {
-        tenantId: shop.id,
-        name: 'John Doe',
-        phone: '555-0199',
-        outstandingBalance: 110.0,
-        totalPurchases: 110.0,
-      },
-    });
-  } else {
-    customer = await prisma.customer.update({
-      where: { id: customer.id },
-      data: {
-        outstandingBalance: 110.0,
-        totalPurchases: 110.0,
-      },
-    });
-  }
-
-  console.log('Customer ready: ' + customer.id);
-
-  // 9) Sales Invoice (invoiceNumber is unique)
-  const invoice = await prisma.salesInvoice.upsert({
-    where: { invoiceNumber: 'INV-TEST-001' },
+  // 5. Create or Update Owner User
+  const passwordHash = await bcrypt.hash(ownerPassword, 10);
+  const owner = await prisma.user.upsert({
+    where: { email: ownerEmail },
     update: {
-      tenantId: shop.id,
-      branchId: branch.id,
-      customerId: customer.id,
-      cashierId: user.user_id,
-      invoiceDate: new Date(),
-      invoiceTime: new Date(),
-      saleType: SaleType.CREDIT,
-      paymentStatus: PaymentStatus.UNPAID,
-      status: InvoiceStatus.COMPLETED,
-      subtotal: 100.0,
-      taxAmount: 10.0,
-      totalAmount: 110.0,
+      password_hash: passwordHash,
+      tenant_id: shop.id,
+      role_id: ownerRole.id,
+      first_name: 'System',
+      last_name: 'Owner',
+      is_active: true,
+      is_verified: true,
+      status: StaffStatus.APPROVED,
     },
     create: {
-      tenantId: shop.id,
-      branchId: branch.id,
-      customerId: customer.id,
-      cashierId: user.user_id,
-      invoiceNumber: 'INV-TEST-001',
-      invoiceDate: new Date(),
-      invoiceTime: new Date(),
-      saleType: SaleType.CREDIT,
-      paymentStatus: PaymentStatus.UNPAID,
-      status: InvoiceStatus.COMPLETED,
-      subtotal: 100.0,
-      taxAmount: 10.0,
-      totalAmount: 110.0,
+      email: ownerEmail,
+      password_hash: passwordHash,
+      tenant_id: shop.id,
+      first_name: 'System',
+      last_name: 'Owner',
+      phone: '+94770000000',
+      role_id: ownerRole.id,
+      is_active: true,
+      is_verified: true,
+      status: StaffStatus.APPROVED,
     },
   });
+  console.log(`Owner ready: ${owner.email}`);
 
-  console.log('Invoice ready: ' + invoice.id);
-
-  // 10) SalesInvoiceItem (no unique in schema, use findFirst + update/create)
-  let invoiceItem = await prisma.salesInvoiceItem.findFirst({
-    where: {
-      invoiceId: invoice.id,
-      productId: product.id,
-      variantId: null,
-      warehouseId: warehouse.id,
-    },
-  });
-
-  if (!invoiceItem) {
-    invoiceItem = await prisma.salesInvoiceItem.create({
+  // Categories (FIXED: Added categoryCode and used categoryName)
+  const categoriesData = [
+    'Cement',
+    'Steel',
+    'Tools',
+    'Plumbing',
+    'Electrical',
+    'Paint',
+  ];
+  const categories: Record<string, string> = {};
+  for (const catName of categoriesData) {
+    const cat = await prisma.category.create({
       data: {
-        invoiceId: invoice.id,
-        productId: product.id,
-        variantId: null,
-        warehouseId: warehouse.id,
-        quantity: 1,
-        unitPrice: 100.0,
-        lineTotal: 100.0,
+        tenantId: shop.id,
+        categoryName: catName,
+        categoryCode: catName.substring(0, 3).toUpperCase(),
+        categoryLevel: 0,
       },
     });
-  } else {
-    invoiceItem = await prisma.salesInvoiceItem.update({
-      where: { id: invoiceItem.id },
-      data: {
-        quantity: 1,
-        unitPrice: 100.0,
-        lineTotal: 100.0,
-      },
-    });
+    categories[catName] = cat.id;
   }
 
-  console.log('Invoice item ready: ' + invoiceItem.id);
+  // Brands (FIXED: Used brandName instead of name)
+  const brandsData = [
+    'Holcim',
+    'Tokyo Super',
+    'Bosch',
+    'Stanley',
+    'Asian Paint',
+  ];
+  const brands: Record<string, string> = {};
+  for (const brandName of brandsData) {
+    const brand = await prisma.brand.create({
+      data: { tenantId: shop.id, brandName: brandName },
+    });
+    brands[brandName] = brand.id;
+  }
 
-  console.log('');
-  console.log('Seeding complete. UUIDs for testing:');
-  console.log('tenantId: ' + shop.id);
-  console.log('branchId: ' + branch.id);
-  console.log('customerId: ' + customer.id);
-  console.log('invoiceId: ' + invoice.id);
-  console.log('invoiceItemId: ' + invoiceItem.id);
-  console.log('productId: ' + product.id);
-  console.log('warehouseId: ' + warehouse.id);
+  // Units (FIXED: Used unitName and unitCode)
+  const unitsData = [
+    { name: 'Kilogram', abbr: 'kg' },
+    { name: 'Piece', abbr: 'pcs' },
+    { name: 'Liter', abbr: 'L' },
+    { name: 'Meter', abbr: 'm' },
+    { name: 'Roll', abbr: 'roll' },
+  ];
+  const units: Record<string, string> = {};
+  for (const u of unitsData) {
+    const unit = await prisma.unit.create({
+      data: { tenantId: shop.id, unitName: u.name, unitCode: u.abbr },
+    });
+    units[u.name] = unit.id;
+  }
+
+  // Products
+  const productsData = [
+    {
+      name: 'Holcim Cement 50kg',
+      sku: 'HCM-50-001',
+      category: 'Cement',
+      brand: 'Holcim',
+      unit: 'Kilogram',
+      price: 1650,
+      cost: 1400,
+    },
+    {
+      name: 'Tokyo Super Cement',
+      sku: 'TKY-50-002',
+      category: 'Cement',
+      brand: 'Tokyo Super',
+      unit: 'Kilogram',
+      price: 1720,
+      cost: 1500,
+    },
+    {
+      name: 'Steel Rods 12mm',
+      sku: 'STL-12-002',
+      category: 'Steel',
+      brand: null,
+      unit: 'Piece',
+      price: 2450,
+      cost: 2000,
+    },
+    {
+      name: 'Steel Rods 16mm',
+      sku: 'STL-16-003',
+      category: 'Steel',
+      brand: null,
+      unit: 'Piece',
+      price: 3200,
+      cost: 2600,
+    },
+    {
+      name: 'Bosch Power Drill 18V',
+      sku: 'BSH-DR-001',
+      category: 'Tools',
+      brand: 'Bosch',
+      unit: 'Piece',
+      price: 14500,
+      cost: 12000,
+    },
+    {
+      name: 'Stanley Hammer 20oz',
+      sku: 'STY-HM-005',
+      category: 'Tools',
+      brand: 'Stanley',
+      unit: 'Piece',
+      price: 1850,
+      cost: 1500,
+    },
+    {
+      name: 'PVC Pipe 2 inch (10ft)',
+      sku: 'PVC-2I-005',
+      category: 'Plumbing',
+      brand: null,
+      unit: 'Piece',
+      price: 1850,
+      cost: 1400,
+    },
+    {
+      name: 'Water Tap Brass 1/2"',
+      sku: 'TAP-BR-001',
+      category: 'Plumbing',
+      brand: null,
+      unit: 'Piece',
+      price: 1250,
+      cost: 900,
+    },
+    {
+      name: 'Circuit Breaker 32A',
+      sku: 'ELE-CB-032',
+      category: 'Electrical',
+      brand: null,
+      unit: 'Piece',
+      price: 2100,
+      cost: 1700,
+    },
+    {
+      name: 'Copper Wire 1.5mm 1Roll',
+      sku: 'ELE-WR-015',
+      category: 'Electrical',
+      brand: null,
+      unit: 'Roll',
+      price: 5800,
+      cost: 4500,
+    },
+    {
+      name: 'Asian Paint White 4L',
+      sku: 'PNT-WH-003',
+      category: 'Paint',
+      brand: 'Asian Paint',
+      unit: 'Liter',
+      price: 3200,
+      cost: 2500,
+    },
+    {
+      name: 'Paint Roller 9 inch',
+      sku: 'PNT-RL-009',
+      category: 'Paint',
+      brand: null,
+      unit: 'Piece',
+      price: 850,
+      cost: 500,
+    },
+    {
+      name: 'Nails 3 inch (1kg)',
+      sku: 'NLS-3I-004',
+      category: 'Tools',
+      brand: null,
+      unit: 'Kilogram',
+      price: 450,
+      cost: 300,
+    },
+  ];
+
+  const createdProducts: Product[] = [];
+  for (const pd of productsData) {
+    const p = await prisma.product.create({
+      data: {
+        tenantId: shop.id,
+        name: pd.name,
+        sku: pd.sku,
+        categoryId: categories[pd.category],
+        brandId: pd.brand ? brands[pd.brand] : null,
+        unitId: units[pd.unit],
+        purchasePrice: pd.cost,
+        sellingPrice: pd.price,
+        minimumStockLevel: 5,
+        isActive: true,
+        createdBy: owner.user_id,
+        taxCategory: TaxCategory.STANDARD_VAT,
+      },
+    });
+    createdProducts.push(p);
+
+    // Initial Stock
+    const qty = randomInt(10, 100);
+    if (qty < 15) {
+      await prisma.stock.create({
+        data: {
+          tenantId: shop.id,
+          productId: p.id,
+          warehouseId: warehouse.id,
+          branchId: branch.id,
+          quantity: randomInt(1, 4),
+          availableQuantity: randomInt(1, 4),
+        },
+      });
+    } else {
+      await prisma.stock.create({
+        data: {
+          tenantId: shop.id,
+          productId: p.id,
+          warehouseId: warehouse.id,
+          branchId: branch.id,
+          quantity: qty,
+          availableQuantity: qty,
+        },
+      });
+    }
+  }
+  console.log(`Created ${createdProducts.length} products with stock.`);
+
+  // Customers
+  const customers = [];
+  for (let i = 1; i <= 15; i++) {
+    const c = await prisma.customer.create({
+      data: {
+        tenantId: shop.id,
+        name: `Customer ${i}`,
+        phone: `077123456${i % 10}`,
+        outstandingBalance: 0,
+      },
+    });
+    customers.push(c);
+  }
+
+  // Generate 3 months of Sales Data
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - 3);
+
+  let invoiceCount = 0;
+  const days = 90;
+
+  for (let d = 0; d < days; d++) {
+    const currentDay = new Date(startDate);
+    currentDay.setDate(startDate.getDate() + d);
+
+    const dailySales = randomInt(1, 5);
+    for (let s = 0; s < dailySales; s++) {
+      const saleTime = new Date(currentDay);
+      saleTime.setHours(randomInt(8, 18), randomInt(0, 59));
+
+      const numItems = randomInt(1, 4);
+      let subtotal = 0;
+      const invoiceNumber = `INV-${d}-${s}-${randomInt(1000, 9999)}`;
+
+      const itemsData: any[] = [];
+      // FIXED: Deleted the empty createdProducts[] array that was crashing the loop!
+      for (let i = 0; i < numItems; i++) {
+        const prod = createdProducts[randomInt(0, createdProducts.length - 1)];
+        const qty = randomInt(1, 5);
+        const unitPrice = Number(prod.sellingPrice);
+        const costPrice = Number(prod.purchasePrice);
+        const lineTotal = unitPrice * qty;
+        subtotal += lineTotal;
+
+        itemsData.push({
+          productId: prod.id,
+          productName: prod.name,
+          quantity: qty,
+          unitPrice,
+          lineTotal,
+          costPrice,
+          profit: lineTotal - costPrice * qty,
+          warehouseId: warehouse.id,
+        });
+      }
+
+      await prisma.salesInvoice.create({
+        data: {
+          tenantId: shop.id,
+          branchId: branch.id,
+          customerId: customers[randomInt(0, customers.length - 1)].id,
+          invoiceNumber,
+          invoiceDate: saleTime,
+          invoiceTime: saleTime,
+          saleType: SaleType.CASH,
+          subtotal,
+          totalAmount: subtotal,
+          paidAmount: subtotal,
+          balance: 0,
+          paymentStatus: PaymentStatus.PAID,
+          status: InvoiceStatus.COMPLETED,
+          cashierId: owner.user_id,
+          createdAt: saleTime,
+          items: {
+            create: itemsData,
+          },
+        },
+      });
+      invoiceCount++;
+    }
+  }
+  console.log(`Generated ${invoiceCount} sales invoices over 3 months.`);
+
+  console.log('Seeding completed successfully!');
 }
 
 main()
-  .then(async () => {
-    await prisma.$disconnect();
-    await pool.end();
-    console.log('Seed process finished gracefully.');
-  })
-  .catch(async (e) => {
+  .catch((e) => {
     console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
     await prisma.$disconnect();
     await pool.end();
-    process.exit(1);
   });

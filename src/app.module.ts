@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -12,6 +12,17 @@ import { AuthModule } from './auth/auth.module';
 import { ReportsModule } from './reports/reports.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { StaffModule } from './staff/staff.module';
+import { AdminModule } from './admin/admin.module';
+import { TokenLoggerMiddleware } from './common/middleware/token-logger.middleware';
+import { CustomersModule } from './customers/customers.module';
+import { SalesModule } from './sales/sales.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { SuppliersModule } from './suppliers/suppliers.module';
+import { RolesModule } from './roles/roles.module';
+import { ExpensesModule } from './expenses/expenses.module';
+import { ShopsModule } from './shops/shops.module';
 
 @Module({
   imports: [
@@ -28,8 +39,22 @@ import { ScheduleModule } from '@nestjs/schedule';
     ReportsModule,
     InventoryModule,
     ScheduleModule.forRoot(),
+    StaffModule,
+    AdminModule,
+    CustomersModule,
+    SalesModule,
+    DashboardModule,
+    NotificationsModule,
+    SuppliersModule,
+    RolesModule,
+    ExpensesModule,
+    ShopsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TokenLoggerMiddleware).forRoutes('*');
+  }
+}

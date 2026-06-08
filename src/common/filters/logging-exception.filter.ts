@@ -1,18 +1,17 @@
-import { BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
 import {
   Catch,
   ArgumentsHost,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
 
 @Catch()
 export class LoggingExceptionFilter extends BaseExceptionFilter {
   private readonly logger = new Logger(LoggingExceptionFilter.name);
 
-  constructor(httpAdapterHost: HttpAdapterHost) {
-    // Pass it to super() so NestJS knows how to send responses back to Postman
-    super(httpAdapterHost.httpAdapter);
+  constructor(adapterHost: HttpAdapterHost) {
+    super(adapterHost.httpAdapter);
   }
 
   catch(exception: unknown, host: ArgumentsHost) {

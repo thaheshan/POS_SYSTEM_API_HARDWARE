@@ -16,6 +16,18 @@ async function bootstrap() {
     defaultVersion: '1',
   });
 
+  app.enableCors({
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:4000',
+      ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : []),
+    ].filter(Boolean),
+    credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Authorization, Accept',
+  });
+
   app.useGlobalInterceptors(
     new ResponseInterceptor(),
     new LoggingInterceptor(),
@@ -28,7 +40,9 @@ async function bootstrap() {
   const httpAdapterHost = app.get(HttpAdapterHost);
 
   app.useGlobalFilters(new LoggingExceptionFilter(httpAdapterHost));
-  await app.listen(process.env.PORT ?? 3000);
+
+  const port = parseInt(process.env.PORT || '3000', 10);
+  await app.listen(port, '0.0.0.0');
 }
 
 bootstrap();
