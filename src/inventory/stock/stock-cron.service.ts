@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { InvoiceStatus, SalesInvoice, SalesInvoiceItem } from '@prisma/client';
+import { InvoiceStatus, SalesInvoice, SalesInvoiceItem, Prisma } from '@prisma/client';
 
 type InvoiceWithItems = SalesInvoice & {
   items: SalesInvoiceItem[];
@@ -77,6 +77,16 @@ export class StockCronService {
 
       this.logger.log('CRON: Abandoned reservation cleanup complete.');
     } catch (error) {
+      // Gracefully skip if tables don't exist yet (before first migration)
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2021'
+      ) {
+        this.logger.warn(
+          'CRON: Skipping — sales_invoices table does not exist yet. Run `npx prisma db push` to create all tables.',
+        );
+        return;
+      }
       this.logger.error('CRON: Failed to process abandoned invoices', error);
     }
   }

@@ -29,7 +29,7 @@ export class SalesReturnsController {
   ) {
     return this.salesReturnsService.createReturnRequest(
       createSalesReturnDto,
-      req.user.user_id,
+      req.user.sub,
       req.user.tenant_id,
     );
   }
@@ -41,7 +41,7 @@ export class SalesReturnsController {
   ) {
     return this.salesReturnsService.approveReturn(
       returnId,
-      req.user.user_id,
+      req.user.sub,
       req.user.tenant_id,
     );
   }
@@ -54,7 +54,7 @@ export class SalesReturnsController {
   ) {
     const rejectedReturn = await this.salesReturnsService.rejectReturn(
       returnId,
-      req.user.user_id,
+      req.user.sub,
       rejectDto,
       req.user.tenant_id,
     );

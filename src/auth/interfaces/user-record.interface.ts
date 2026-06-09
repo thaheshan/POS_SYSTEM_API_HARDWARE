@@ -10,4 +10,8 @@ export interface UserRecord {
   tenant_id: string;
   failed_login_attempts: number;
   account_locked_until: Date | null;
+  totp_secret?: string;
+  phone_number?: string;
+  two_factor_enabled: boolean;
+  status?: string;
 }
