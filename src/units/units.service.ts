@@ -51,6 +51,20 @@ export class UnitsService {
     });
   }
 
+  async findOne(tenant_id: string, id: string) {
+    const unit = await this.prisma.unit.findFirst({
+      where: {
+        id: id,
+        tenantId: tenant_id,
+      },
+    });
+
+    if (!unit) {
+      throw new NotFoundException('Unit not found');
+    }
+    return unit;
+  }
+
   async update(tenant_id: string, id: string, updateUnitDto: UpdateUnitDto) {
     this.logger.log(`Updating unit ${id} for tenant ${tenant_id}`);
     const unit = await this.prisma.unit.findUnique({

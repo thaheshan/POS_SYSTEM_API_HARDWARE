@@ -40,6 +40,16 @@ export class UnitsController {
     return { success: true, data };
   }
 
+  @Get(':id')
+  async findOne(@Param('id') id: string, @Request() req: AuthRequest) {
+    const tenant_id = req.user.tenant_id;
+    const unit = await this.unitsService.findOne(tenant_id, id);
+    return {
+      success: true,
+      data: unit,
+    };
+  }
+
   @Patch(':id')
   async update(
     @Request() req: AuthRequest,

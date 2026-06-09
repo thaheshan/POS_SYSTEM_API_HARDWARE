@@ -230,16 +230,14 @@ export class CategoriesService {
     });
     const maxDepth = tenantSetting?.maxCategoryDepth ?? 3;
 
-    if (parent.categoryLevel == null) {
-      this.logger.warn(`Parent category level is null for tenant ${tenantId}`);
-      throw new Error('Parent category level is null');
-    }
+    const parentLevel = parent.categoryLevel ?? 1;
 
-    if (parent.categoryLevel >= maxDepth) {
+    if (parentLevel >= maxDepth) {
       this.logger.warn(`Category depth limit exceeded for tenant ${tenantId}`);
       throw new CategoryDepthLimitExceededException();
     }
-    return parent.categoryLevel + 1;
+
+    return parentLevel + 1;
   }
 
   async seedDefaultCategories(tenantId: string) {

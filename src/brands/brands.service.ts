@@ -26,7 +26,7 @@ export class BrandsService {
       this.logger.log(
         `Brand '${createBrandDto.brandName}' created with id ${brand.id}`,
       );
-      return brand;
+      return this.prisma.brand.findUnique({ where: { id: brand.id } });
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err.code === 'P2002') {
@@ -50,6 +50,20 @@ export class BrandsService {
     });
   }
 
+  async findOne(tenant_id: string, id: string) {
+    const brand = await this.prisma.brand.findFirst({
+      where: {
+        id: id,
+        tenantId: tenant_id,
+      },
+    });
+
+    if (!brand) {
+      throw new BrandNotFoundException('Brand not found');
+    }
+    return brand;
+  }
+
   async update(tenant_id: string, id: string, updateBrandDto: UpdateBrandDto) {
     this.logger.log(`Updating brand ${id} for tenant ${tenant_id}`);
     const brand = await this.prisma.brand.findFirst({
@@ -62,8 +76,8 @@ export class BrandsService {
     }
 
     try {
-      const updated = await this.prisma.brand.update({
-        where: { id },
+      const updated = await this.prisma.brand.updateMany({
+        where: { id, tenantId: tenant_id },
         data: updateBrandDto,
       });
       this.logger.log(`Brand ${id} updated for tenant ${tenant_id}`);
@@ -94,8 +108,8 @@ export class BrandsService {
       throw new BrandNotFoundException('Brand not found');
     }
 
-    const deleted = await this.prisma.brand.delete({
-      where: { id },
+    const deleted = await this.prisma.brand.deleteMany({
+      where: { id, tenantId: tenant_id },
     });
     this.logger.log(`Brand ${id} deleted for tenant ${tenant_id}`);
     return deleted;

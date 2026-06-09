@@ -40,6 +40,16 @@ export class BrandsController {
     return { success: true, data };
   }
 
+  @Get(':id')
+  async findOne(@Param('id') id: string, @Request() req: AuthRequest) {
+    const tenant_id = req.user.tenant_id;
+    const brand = await this.brandsService.findOne(tenant_id, id);
+    return {
+      success: true,
+      data: brand,
+    };
+  }
+
   @Patch(':id')
   async update(
     @Request() req: AuthRequest,
