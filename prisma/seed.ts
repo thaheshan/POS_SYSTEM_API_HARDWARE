@@ -35,9 +35,21 @@ function randomInt(min: number, max: number) {
 async function main() {
   console.log('Starting seed...');
 
+  if (!process.env.SEED_OWNER_PASSWORD) {
+    throw new Error(
+      'SEED_OWNER_PASSWORD environment variable is required for seeding!',
+    );
+  }
+
+  if (!process.env.SEED_OWNER_EMAIL) {
+    throw new Error(
+      'SEED_OWNER_EMAIL environment variable is required for seeding!',
+    );
+  }
+
   // Pull secure credentials from environment variables
-  const ownerEmail = process.env.SEED_OWNER_EMAIL || 'owner@test.com';
-  const ownerPassword = process.env.SEED_OWNER_PASSWORD || 'defaultDev123!';
+  const ownerEmail = process.env.SEED_OWNER_EMAIL;
+  const ownerPassword = process.env.SEED_OWNER_PASSWORD;
 
   // 1. Create or Find Shop (findFirst fallback because Shop lacks a unique constraint)
   let shop = await prisma.shop.findFirst({
