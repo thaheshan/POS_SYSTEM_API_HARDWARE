@@ -16,6 +16,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class AuditLogsService {
   private readonly logger = new Logger(AuditLogsService.name);
   private readonly maxCsvExportRows = 10000;
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getLogs(
@@ -35,11 +36,22 @@ export class AuditLogsService {
       if (isNaN(page) || page <= 0) page = 1;
       if (isNaN(limit) || limit <= 0) limit = 50;
 
-      if (dto.exportFormat === 'csv' && limit > this.maxCsvExportRows) {
-        this.logger.warn(
-          `User attempted to export ${limit} logs. Capping at ${this.maxCsvExportRows}.`,
-        );
-        limit = this.maxCsvExportRows;
+      // FIX: Enforce defensive caps to prevent Denial of Service (DoS) memory exhaustion
+      if (dto.exportFormat === 'csv') {
+        if (limit > this.maxCsvExportRows) {
+          this.logger.warn(
+            `User attempted to export ${limit} logs. Capping CSV rows at ${this.maxCsvExportRows}.`,
+          );
+          limit = this.maxCsvExportRows;
+        }
+      } else {
+        // Hard cap standard JSON response arrays to prevent server Out-Of-Memory crashes
+        if (limit > 500) {
+          this.logger.warn(
+            `User requested excessive page sizing (${limit}). Restricting JSON payload to 500 records.`,
+          );
+          limit = 500;
+        }
       }
 
       const skip = (page - 1) * limit;
@@ -60,8 +72,8 @@ export class AuditLogsService {
         action: log.action,
         entityType: log.entityType,
         entityId: log.entityId,
-        oldValues: log.oldValues as Record<string, unknown> | null,
-        newValues: log.newValues as Record<string, unknown> | null,
+        oldValues: log.oldValues as unknown as Record<string, unknown> | null,
+        newValues: log.newValues as unknown as Record<string, unknown> | null,
         ipAddress: log.ipAddress,
         timestamp: log.timestamp,
       }));
@@ -128,10 +140,14 @@ export class AuditLogsService {
     if (dto.entityType) where.entityType = dto.entityType;
     if (dto.actionType) where.action = dto.actionType;
 
+    // FIX: Explicitly structuralizing the object properties to avoid mutation failures
     if (dto.startDate || dto.endDate) {
-      where.timestamp = {};
-      if (dto.startDate) where.timestamp.gte = new Date(dto.startDate);
-      if (dto.endDate) where.timestamp.lte = new Date(dto.endDate);
+      const timestampFilter: Prisma.DateTimeFilter = {};
+
+      if (dto.startDate) timestampFilter.gte = new Date(dto.startDate);
+      if (dto.endDate) timestampFilter.lte = new Date(dto.endDate);
+
+      where.timestamp = timestampFilter;
     }
 
     return where;
