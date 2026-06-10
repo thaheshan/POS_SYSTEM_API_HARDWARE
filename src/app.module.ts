@@ -5,6 +5,9 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
+import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { HealthModule } from './health/health.module';
+import { RedisModule } from './cache/redis.module';
 import { ReportsModule } from './reports/reports.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -28,6 +31,9 @@ import { ShopsModule } from './shops/shops.module';
     PrismaModule,
     SystemModule,
     AuthModule,
+    AuditLogsModule,
+    RedisModule,
+    HealthModule,
     ReportsModule,
     InventoryModule,
     ScheduleModule.forRoot(),
