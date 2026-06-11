@@ -1,4 +1,9 @@
-import { Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { StorageClient } from '@supabase/storage-js';
@@ -14,19 +19,20 @@ export class ShopsService {
     private configService: ConfigService,
   ) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseKey = this.configService.get<string>(
+      'SUPABASE_SERVICE_ROLE_KEY',
+    );
 
     if (!supabaseUrl || !supabaseKey) {
-      this.logger.warn('Supabase URL or Key is missing. Storage functionality may fail.');
+      this.logger.warn(
+        'Supabase URL or Key is missing. Storage functionality may fail.',
+      );
     }
 
-    this.storage = new StorageClient(
-      `${supabaseUrl || ''}/storage/v1`,
-      {
-        apikey: supabaseKey || '',
-        Authorization: `Bearer ${supabaseKey || ''}`,
-      }
-    );
+    this.storage = new StorageClient(`${supabaseUrl || ''}/storage/v1`, {
+      apikey: supabaseKey || '',
+      Authorization: `Bearer ${supabaseKey || ''}`,
+    });
   }
 
   async uploadLogo(shopId: string, file: any) {
@@ -53,18 +59,16 @@ export class ShopsService {
         throw new InternalServerErrorException('Failed to upload logo');
       }
 
-      // Get public URL
       const { data: publicUrlData } = this.storage
         .from('shop-logos')
         .getPublicUrl(filePath);
 
       const logoUrl = publicUrlData.publicUrl;
 
-      // Update shop with the new logo URL
       const updatedShop = await this.prisma.shop.update({
         where: { id: shopId },
         data: { logo_url: logoUrl },
-        select: { id: true, logo_url: true, name: true }
+        select: { id: true, logo_url: true, name: true },
       });
 
       return updatedShop;
@@ -72,5 +76,46 @@ export class ShopsService {
       this.logger.error('Error in uploadLogo', err);
       throw new InternalServerErrorException('An error occurred during upload');
     }
+  }
+
+  async getActiveShops() {
+    try {
+      return await this.prisma.shop.findMany({
+        where: {
+          subscriptionStatus: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to fetch active shops', error);
+      throw new InternalServerErrorException('Could not fetch shops');
+    }
+  }
+
+  async verifyShopAssociation(shopId: string, privateId: string) {
+    if (shopId !== privateId) {
+      return { success: false, message: 'Invalid Shop Private ID' };
+    }
+
+    const shop = await this.prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { subscriptionStatus: true },
+    });
+
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+
+    if (shop.subscriptionStatus !== 'ACTIVE') {
+      return {
+        success: false,
+        message:
+          'Registration failed. This shop does not have an active subscription.',
+      };
+    }
+    return { success: true, message: 'Shop verified successfully' };
   }
 }

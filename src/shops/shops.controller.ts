@@ -1,10 +1,23 @@
-import { Controller, Post, UseGuards, UseInterceptors, UploadedFile, Req, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  Req,
+  BadRequestException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Body,
+} from '@nestjs/common';
 import { ShopsService } from './shops.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { AuthRequest } from '../common/interfaces/auth-request.interface';
+import { VerifyShopDto } from './dto/verify-shop.dto';
 
 @Controller('shops')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -13,21 +26,25 @@ export class ShopsController {
 
   @Post('logo')
   @Roles('OWNER', 'ADMIN')
-  @UseInterceptors(FileInterceptor('file', {
-    limits: {
-      fileSize: 2 * 1024 * 1024, // 2MB
-    },
-    fileFilter: (req, file, cb) => {
-      if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
-        return cb(new BadRequestException('Only JPG, JPEG, and PNG files are allowed'), false);
-      }
-      cb(null, true);
-    },
-  }))
-  async uploadLogo(
-    @Req() req: AuthRequest,
-    @UploadedFile() file: any,
-  ) {
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: {
+        fileSize: 2 * 1024 * 1024, // 2MB
+      },
+      fileFilter: (req, file, cb) => {
+        if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
+          return cb(
+            new BadRequestException(
+              'Only JPG, JPEG, and PNG files are allowed',
+            ),
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadLogo(@Req() req: AuthRequest, @UploadedFile() file: any) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
@@ -37,5 +54,24 @@ export class ShopsController {
     }
 
     return this.shopsService.uploadLogo(req.user.tenant_id, file);
+  }
+
+  @Get('active')
+  async getActiveShops() {
+    return this.shopsService.getActiveShops();
+  }
+
+  @Post('verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyShopAssociation(@Body() verifyShopDto: VerifyShopDto) {
+    const result = await this.shopsService.verifyShopAssociation(
+      verifyShopDto.shopId,
+      verifyShopDto.privateId,
+    );
+
+    if (!result.success) {
+      throw new BadRequestException(result.message);
+    }
+    return result;
   }
 }
