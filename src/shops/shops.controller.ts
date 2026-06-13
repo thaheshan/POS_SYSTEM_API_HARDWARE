@@ -18,13 +18,14 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { AuthRequest } from '../common/interfaces/auth-request.interface';
 import { VerifyShopDto } from './dto/verify-shop.dto';
+import { Public } from 'src/auth/decorators/public.decorator';
 
 @Controller('shops')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ShopsController {
   constructor(private readonly shopsService: ShopsService) {}
 
   @Post('logo')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'ADMIN')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -56,11 +57,13 @@ export class ShopsController {
     return this.shopsService.uploadLogo(req.user.tenant_id, file);
   }
 
+  @Public()
   @Get('active')
   async getActiveShops() {
     return this.shopsService.getActiveShops();
   }
 
+  @Public()
   @Post('verify')
   @HttpCode(HttpStatus.OK)
   async verifyShopAssociation(@Body() verifyShopDto: VerifyShopDto) {

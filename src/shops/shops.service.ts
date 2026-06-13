@@ -96,7 +96,10 @@ export class ShopsService {
   }
 
   async verifyShopAssociation(shopId: string, privateId: string) {
-    if (shopId !== privateId) {
+    const expectedCode = shopId.substring(0, 8).toLowerCase();
+    const providedCode = privateId.trim().toLowerCase();
+
+    if (expectedCode !== providedCode) {
       return { success: false, message: 'Invalid Shop Private ID' };
     }
 
