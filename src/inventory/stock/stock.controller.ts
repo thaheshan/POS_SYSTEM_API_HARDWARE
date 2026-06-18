@@ -140,4 +140,15 @@ export class StockController {
       req.user.tenant_id,
     );
   }
+
+  @Get('trend')
+  @ApiOperation({ summary: 'Get stock movement trend for a date range' })
+  @ApiResponse({ status: 200, description: 'Returns daily in/out movement trends.' })
+  async getStockTrend(
+    @Req() req: AuthenticatedRequest,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.stockService.getStockTrend(req.user.tenant_id, startDate, endDate);
+  }
 }

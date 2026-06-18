@@ -7,11 +7,14 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
+  Delete,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { StaffService } from './staff.service';
 import { RegisterStaffDto } from './dto/register-staff.dto';
+import { UpdateStaffDto } from './dto/update-staff.dto';
 import { ApproveStaffDto } from './dto/approve-staff.dto';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import type { AuthRequest } from 'src/common/interfaces/auth-request.interface';
@@ -24,6 +27,20 @@ export class StaffController {
   @HttpCode(HttpStatus.CREATED)
   async registerStaff(@Body() registerStaffDto: RegisterStaffDto) {
     return this.staffService.registerStaff(registerStaffDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  async getAllStaff(@Req() req: AuthRequest) {
+    return this.staffService.getAllStaff(req.user.tenant_id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pending')
+  @HttpCode(HttpStatus.OK)
+  async getPendingStaff(@Req() req: AuthRequest) {
+    return this.staffService.getPendingStaff(req.user.tenant_id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -45,5 +62,28 @@ export class StaffController {
   ) {
     const ownerId = req.user.sub;
     return this.staffService.approveStaff(approveStaffDto, ownerId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':staff_id')
+  @HttpCode(HttpStatus.OK)
+  async updateStaff(
+    @Param('staff_id', ParseUUIDPipe) staffId: string,
+    @Body() updateStaffDto: UpdateStaffDto,
+    @Req() req: AuthRequest,
+  ) {
+    const ownerId = req.user.sub;
+    return this.staffService.updateStaff(staffId, req.user.tenant_id, updateStaffDto, ownerId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':staff_id')
+  @HttpCode(HttpStatus.OK)
+  async deleteStaff(
+    @Param('staff_id', ParseUUIDPipe) staffId: string,
+    @Req() req: AuthRequest,
+  ) {
+    const ownerId = req.user.sub;
+    return this.staffService.deleteStaff(staffId, req.user.tenant_id, ownerId);
   }
 }

@@ -19,6 +19,56 @@ export class StaffService {
   private readonly logger = new Logger(StaffService.name);
   constructor(private readonly prisma: PrismaService) {}
 
+  async getAllStaff(tenantId: string) {
+    this.logger.log(`Fetching all staff for tenant: ${tenantId}`);
+    const staff = await this.prisma.user.findMany({
+      where: {
+        tenant_id: tenantId,
+        status: 'APPROVED',
+      },
+      include: { role: true },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return {
+      success: true,
+      data: staff.map(s => ({
+        id: s.user_id,
+        name: `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
+        email: s.email,
+        phone: s.phone ?? 'N/A',
+        role: s.role?.name ?? 'UNKNOWN',
+        status: s.is_active ? 'Active' : 'Inactive',
+        createdAt: s.created_at,
+      })),
+    };
+  }
+
+  async getPendingStaff(tenantId: string) {
+    this.logger.log(`Fetching pending staff for tenant: ${tenantId}`);
+    const pending = await this.prisma.user.findMany({
+      where: {
+        tenant_id: tenantId,
+        status: 'PENDING_APPROVAL',
+      },
+      include: { role: true, shop: true },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return {
+      success: true,
+      data: pending.map(p => ({
+        id: p.user_id,
+        name: `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim(),
+        email: p.email,
+        role: p.role?.name ?? 'UNKNOWN',
+        shopId: p.shop?.id ?? 'N/A',
+        shopName: p.shop?.name ?? 'N/A',
+        submittedAt: p.created_at,
+      })),
+    };
+  }
+
   async registerStaff(dto: RegisterStaffDto) {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(dto.password, saltRounds);
@@ -40,7 +90,7 @@ export class StaffService {
           first_name: firstName,
           last_name: lastName,
           phone: normalizedPhone,
-          role: dto.role,
+          role_id: dto.role, // role here corresponds to role_id sent from frontend
           tenant_id: dto.shop_id,
           status: 'PENDING_APPROVAL',
           is_active: false,
@@ -48,7 +98,7 @@ export class StaffService {
       });
 
       const shopOwner = await this.prisma.user.findFirst({
-        where: { tenant_id: dto.shop_id, role: 'OWNER', is_active: true },
+        where: { tenant_id: dto.shop_id, role: { name: 'OWNER' }, is_active: true },
       });
 
       if (shopOwner) {
@@ -147,7 +197,7 @@ export class StaffService {
         where: {
           user_id: ownerId,
           tenant_id: staffMember.tenant_id,
-          role: 'OWNER',
+          role: { name: 'OWNER' },
           is_active: true,
         },
       });
@@ -202,4 +252,90 @@ export class StaffService {
       throw new ApproveStaffException();
     }
   }
+
+  async updateStaff(staffId: string, tenantId: string, dto: any, requesterId: string) {
+    const requester = await this.prisma.user.findFirst({
+      where: { user_id: requesterId, tenant_id: tenantId, role: { name: 'OWNER' } }
+    });
+    
+    if (!requester) {
+      throw new UnauthorizedStaffApprovalException(); // Reusing the unauthorized exception
+    }
+
+    const staffMember = await this.prisma.user.findFirst({
+      where: { user_id: staffId, tenant_id: tenantId }
+    });
+
+    if (!staffMember) {
+      throw new InvalidStaffActionException('Staff member not found.');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { user_id: staffId },
+      data: {
+        first_name: dto.first_name ?? staffMember.first_name,
+        last_name: dto.last_name ?? staffMember.last_name,
+        email: dto.email ?? staffMember.email,
+        phone: dto.phone ?? staffMember.phone,
+        role_id: dto.role_id ?? staffMember.role_id,
+      },
+      select: {
+        user_id: true,
+        first_name: true,
+        last_name: true,
+        email: true,
+        role: true,
+      }
+    });
+
+    return { success: true, data: updated };
+  }
+
+  async deleteStaff(staffId: string, tenantId: string, requesterId: string) {
+    const requester = await this.prisma.user.findFirst({
+      where: { user_id: requesterId, tenant_id: tenantId, role: { name: 'OWNER' } }
+    });
+    
+    if (!requester) {
+      throw new UnauthorizedStaffApprovalException();
+    }
+
+    const staffMember = await this.prisma.user.findFirst({
+      where: { user_id: staffId, tenant_id: tenantId },
+      include: { role: true }
+    });
+
+    if (!staffMember) {
+      throw new InvalidStaffActionException('Staff member not found.');
+    }
+
+    if (staffMember.role?.name === 'OWNER') {
+      // Allow deletion only if there are other owner accounts remaining
+      const ownerCount = await this.prisma.user.count({
+        where: {
+          tenant_id: tenantId,
+          is_active: true,
+          role: { name: 'OWNER' },
+        },
+      });
+
+      if (ownerCount <= 1) {
+        throw new InvalidStaffActionException(
+          'Cannot delete the last OWNER account. Assign another owner first.',
+        );
+      }
+    }
+
+    // Soft delete
+    await this.prisma.user.update({
+      where: { user_id: staffId },
+      data: {
+        is_active: false,
+        status: 'REJECTED' // Or a dedicated DELETED status if added to schema later
+      }
+    });
+
+    return { success: true, message: 'Staff member removed successfully' };
+  }
 }
+

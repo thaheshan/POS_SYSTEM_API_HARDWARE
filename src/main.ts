@@ -25,7 +25,12 @@ async function bootstrap() {
     }),
   );
   app.enableCors({
-    origin: 'http://localhost:3001',
+    origin: [
+      'http://localhost:3000', 
+      'http://localhost:3001', 
+      'http://localhost:4000',
+      ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : []),
+    ].filter(Boolean) as string[],
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Authorization, Accept',
@@ -50,7 +55,11 @@ async function bootstrap() {
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, swaggerDocument);
 
-  await app.listen(process.env.PORT ?? 3000);
+  const httpAdapterHost = app.get(HttpAdapterHost);
+  app.useGlobalFilters(new LoggingExceptionFilter(httpAdapterHost));
+
+  const port = parseInt(process.env.PORT || '3000', 10);
+  await app.listen(port, '0.0.0.0');
 }
 
 bootstrap();

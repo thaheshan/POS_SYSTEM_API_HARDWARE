@@ -9,66 +9,48 @@ export class UserService {
 
   async findById(userId: string): Promise<AuthUser | null> {
     const user = await this.prisma.db.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        isActive: true,
-        isVerified: true,
-        tenantId: true,
-      },
+      where: { user_id: userId },
+      include: { role: true },
     });
 
-    if (!user) {
-      return null;
-    }
-
+    if (!user) return null;
     return {
-      user_id: user.id,
+      user_id: user.user_id,
       email: user.email,
-      role: user.role,
-      is_active: user.isActive,
-      is_verified: user.isVerified,
-      tenant_id: user.tenantId,
-    };
+      role: user.role?.name ?? 'UNKNOWN',
+      is_active: user.is_active,
+      is_verified: user.is_verified,
+      tenant_id: user.tenant_id ?? '',
+      totp_secret: user.totp_secret ?? undefined,
+      phone_number: user.phone_number ?? undefined,
+      two_factor_enabled: user.two_factor_enabled,
+    } as AuthUser;
   }
 
   async findByEmailWithCredentials(email: string): Promise<UserRecord | null> {
     const user = await this.prisma.db.user.findUnique({
       where: { email },
-      select: {
-        id: true,
-        email: true,
-        passwordHash: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isActive: true,
-        isVerified: true,
-        tenantId: true,
-        failedLoginAttempts: true,
-        accountLockedUntil: true,
-      },
+      include: { role: true },
     });
 
-    if (!user) {
-      return null;
-    }
-
+    if (!user) return null;
     return {
-      user_id: user.id,
+      user_id: user.user_id,
       email: user.email,
-      password_hash: user.passwordHash,
-      first_name: user.firstName,
-      last_name: user.lastName,
-      role: user.role,
-      is_active: user.isActive,
-      is_verified: user.isVerified,
-      tenant_id: user.tenantId,
-      failed_login_attempts: user.failedLoginAttempts,
-      account_locked_until: user.accountLockedUntil,
-    };
+      password_hash: user.password_hash,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      role: user.role?.name ?? 'UNKNOWN',
+      is_active: user.is_active,
+      is_verified: user.is_verified,
+      tenant_id: user.tenant_id ?? '',
+      failed_login_attempts: user.failed_login_attempts,
+      account_locked_until: user.account_locked_until,
+      totp_secret: user.totp_secret ?? undefined,
+      phone_number: user.phone_number ?? undefined,
+      two_factor_enabled: user.two_factor_enabled,
+      status: user.status,
+    } as UserRecord;
   }
 
   async incrementFailedLoginAttempts(email: string): Promise<void> {

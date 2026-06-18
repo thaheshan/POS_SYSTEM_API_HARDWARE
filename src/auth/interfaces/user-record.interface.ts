@@ -13,4 +13,5 @@ export interface UserRecord {
   twoFactorSecret?: string;
   phone_number?: string;
   two_factor_enabled: boolean;
+  status?: string;
 }

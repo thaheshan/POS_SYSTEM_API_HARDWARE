@@ -5,7 +5,7 @@ export interface IRegisterStaffRequest {
   email: string;
   mobile_number: string;
   shop_id: string;
-  role: Role;
+  role: string;
   password: string;
 }
 
