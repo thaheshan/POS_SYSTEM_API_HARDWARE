@@ -260,17 +260,73 @@ export class ProductsService {
   async createCategory(
     tenantId: string,
     name: string,
-    categoryCode: string,
+    categoryCode?: string,
     description?: string,
   ) {
+    const generatedCode =
+      categoryCode ||
+      `${name.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
     return this.prisma.category.create({
       data: {
         tenantId,
         categoryName: name,
-        categoryCode,
+        categoryCode: generatedCode,
         description,
       },
     });
+  }
+
+  async updateCategory(
+    tenantId: string,
+    categoryId: string,
+    dto: { name?: string; categoryCode?: string; description?: string },
+  ) {
+    try {
+      // 1. Verify the category exists and belongs to this tenant
+      const category = await this.prisma.category.findUnique({
+        where: { id: categoryId },
+      });
+
+      if (!category || category.tenantId !== tenantId) {
+        throw new NotFoundException('Category not found');
+      }
+
+      // 2. Update the fields. Notice we map 'name' from the DTO to 'categoryName' in the DB.
+      return await this.prisma.category.update({
+        where: { id: categoryId },
+        data: {
+          ...(dto.name && { categoryName: dto.name }),
+          ...(dto.categoryCode && { categoryCode: dto.categoryCode }),
+          // Allow description to be explicitly cleared if an empty string is passed
+          ...(dto.description !== undefined && {
+            description: dto.description,
+          }),
+        },
+      });
+    } catch (error) {
+      console.error('Error in updateCategory:', error);
+      throw error;
+    }
+  }
+
+  async deleteCategory(tenantId: string, categoryId: string) {
+    // 1. Verify ownership
+    const category = await this.prisma.category.findUnique({
+      where: { id: categoryId },
+    });
+
+    if (!category || category.tenantId !== tenantId) {
+      throw new NotFoundException('Category not found');
+    }
+
+    // 2. Soft-delete strategy: mark inactive so products don't lose their category reference
+    await this.prisma.category.update({
+      where: { id: categoryId },
+      data: { isActive: false },
+    });
+
+    return { success: true, message: 'Category deleted successfully' };
   }
 
   async deleteProduct(productId: string, tenantId: string) {

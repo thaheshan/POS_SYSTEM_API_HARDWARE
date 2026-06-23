@@ -66,7 +66,12 @@ export class ProductsController {
   @ApiOperation({ summary: 'Create a new category' })
   @ApiResponse({ status: 201, description: 'Category created' })
   async createCategory(
-    @Body() body: { name: string; categoryCode: string; description?: string },
+    @Body()
+    body: {
+      name: string;
+      categoryCode?: string;
+      description?: string;
+    },
     @Req() req: AuthenticatedRequest,
   ) {
     return this.productsService.createCategory(
@@ -75,6 +80,30 @@ export class ProductsController {
       body.categoryCode,
       body.description,
     );
+  }
+
+  @Patch('categories/:id')
+  @ApiOperation({ summary: 'Update an existing category' })
+  @ApiResponse({ status: 200, description: 'Category updated successfully' })
+  async updateCategory(
+    @Param('id') id: string,
+    @Body()
+    body: { name?: string; categoryCode?: string; description?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    // Note: Ensure your ProductsService has this method implemented!
+    return this.productsService.updateCategory(req.user.tenant_id, id, body);
+  }
+
+  @Delete('categories/:id')
+  @ApiOperation({ summary: 'Delete a category by ID' })
+  @ApiResponse({ status: 200, description: 'Category deleted successfully' })
+  async deleteCategory(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    // Note: Ensure your ProductsService has this method implemented!
+    return this.productsService.deleteCategory(req.user.tenant_id, id);
   }
 
   @Get()
