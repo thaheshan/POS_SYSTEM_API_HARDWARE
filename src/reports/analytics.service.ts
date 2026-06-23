@@ -425,7 +425,7 @@ export class AnalyticsService {
 
     for (const item of currentWeekItems) {
       const categoryId = item.product.categoryId;
-      const categoryName = item.product.category.name;
+      const categoryName = item.product.category.categoryName;
 
       const current = categoryMap.get(categoryId) || {
         name: categoryName,

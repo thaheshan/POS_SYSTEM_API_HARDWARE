@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 // ================= ENUMS =================
@@ -91,8 +91,16 @@ enum SubscriptionStatus {
 }
 
 // ================= CORE / TENANT MODELS =================
+model TenantSetting {
+  tenantId         String   @id @map("tenant_id") @db.Uuid
+  maxCategoryDepth Int      @default(3) @map("max_category_depth")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("tenant_settings")
+}
+
 model User {
-  user_id       String  @id @default(uuid())
+  user_id       String  @id @default(uuid()) @db.Uuid
   tenant_id     String? @db.Uuid
   email         String  @unique
   password_hash String
@@ -141,55 +149,55 @@ model Shop {
   logo_url             String? @map("logo_url")
 
   // Address
-  address              String? @db.VarChar(300)
-  city                 String? @db.VarChar(100)
-  district             String? @db.VarChar(100)
-  province             String? @db.VarChar(100)
+  address  String? @db.VarChar(300)
+  city     String? @db.VarChar(100)
+  district String? @db.VarChar(100)
+  province String? @db.VarChar(100)
 
-  subscriptionPlan     String?                     @map("subscription_plan") @db.VarChar(50)
-  paymentStatus        SubscriptionPaymentStatus   @default(PENDING) @map("payment_status")
-  subscriptionStatus   SubscriptionStatus          @default(INACTIVE) @map("subscription_status")
-  nextPaymentDue       DateTime?                   @map("next_payment_due")
-  selfReportedPaid     Boolean                     @default(false) @map("self_reported_paid")
+  subscriptionPlan   String?                   @map("subscription_plan") @db.VarChar(50)
+  paymentStatus      SubscriptionPaymentStatus @default(PENDING) @map("payment_status")
+  subscriptionStatus SubscriptionStatus        @default(INACTIVE) @map("subscription_status")
+  nextPaymentDue     DateTime?                 @map("next_payment_due")
+  selfReportedPaid   Boolean                   @default(false) @map("self_reported_paid")
 
-  users              User[]
-  branches           Branch[]
-  warehouses         Warehouse[]
-  categories         Category[]
-  brands             Brand[]
-  units              Unit[]
-  products           Product[]
-  productVariants    ProductVariant[]
-  stocks             Stock[]
-  stockMovements     StockMovement[]
-  salesInvoices      SalesInvoice[]
-  goodsReceivedNotes GoodsReceivedNote[]
-  customers          Customer[]
-  salesReturns       SalesReturn[]
-  creditNotes        CreditNote[]
-  generatedReports   GeneratedReport[]
-  suppliers          Supplier[]
-  supplierRequests   SupplierRequest[]
-  notifications      Notification[]
-  roles              Role[]
-  expenses           Expense[]
+  users                User[]
+  branches             Branch[]
+  warehouses           Warehouse[]
+  categories           Category[]
+  brands               Brand[]
+  units                Unit[]
+  products             Product[]
+  productVariants      ProductVariant[]
+  stocks               Stock[]
+  stockMovements       StockMovement[]
+  salesInvoices        SalesInvoice[]
+  goodsReceivedNotes   GoodsReceivedNote[]
+  customers            Customer[]
+  salesReturns         SalesReturn[]
+  creditNotes          CreditNote[]
+  generatedReports     GeneratedReport[]
+  suppliers            Supplier[]
+  supplierRequests     SupplierRequest[]
+  notifications        Notification[]
+  roles                Role[]
+  expenses             Expense[]
   subscriptionPayments SubscriptionPayment[]
 
   @@map("shops")
 }
 
 model SubscriptionPayment {
-  id          String   @id @default(uuid()) @db.Uuid
-  shopId      String   @map("shop_id") @db.Uuid
-  paidAt      DateTime @default(now()) @map("paid_at")
-  amount      Float
-  method      String?
-  recordedBy  String?  @map("recorded_by")
-  notes       String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(uuid()) @db.Uuid
+  shopId     String   @map("shop_id") @db.Uuid
+  paidAt     DateTime @default(now()) @map("paid_at")
+  amount     Float
+  method     String?
+  recordedBy String?  @map("recorded_by")
+  notes      String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@index([shopId])
   @@map("subscription_payments")
@@ -203,8 +211,8 @@ model Role {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  shop        Shop     @relation(fields: [tenant_id], references: [id])
-  users       User[]
+  shop  Shop   @relation(fields: [tenant_id], references: [id])
+  users User[]
 
   @@map("roles")
 }
@@ -229,7 +237,7 @@ model Branch {
   name     String  @map("branch_name") @db.VarChar(200)
   code     String? @unique @map("branch_code") @db.VarChar(50)
 
-  managerId String?  @map("manager_id")
+  managerId String?  @map("manager_id") @db.Uuid
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -244,41 +252,65 @@ model Branch {
   @@map("branches")
 }
 
+// ================= CATALOG MODELS =================
 model Category {
-  id          String  @id @default(uuid()) @map("category_id") @db.Uuid
-  tenantId    String  @map("tenant_id") @db.Uuid
-  name        String  @map("category_name") @db.VarChar(200)
-  description String? @db.Text
-  isActive    Boolean @default(true) @map("is_active")
+  id               String   @id @default(uuid()) @map("category_id") @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  categoryName     String   @map("category_name")
+  categoryCode     String   @map("category_code")
+  description      String?
+  parentCategoryId String?  @map("parent_category_id") @db.Uuid
+  categoryLevel    Int?     @map("category_level")
+  displayOrder     Int?     @map("display_order")
+  iconUrl          String?  @map("icon_url")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
-  shop     Shop      @relation(fields: [tenantId], references: [id])
-  products Product[]
+  shop           Shop       @relation(fields: [tenantId], references: [id])
+  parentCategory Category?  @relation("CategoryToCategory", fields: [parentCategoryId], references: [id])
+  subCategories  Category[] @relation("CategoryToCategory")
+  products       Product[]
 
+  @@unique([tenantId, categoryCode])
+  @@index([tenantId])
   @@map("categories")
 }
 
 model Brand {
-  id          String  @id @default(uuid()) @map("brand_id") @db.Uuid
-  tenantId    String  @map("tenant_id") @db.Uuid
-  name        String  @map("brand_name") @db.VarChar(200)
-  description String? @db.Text
-  isActive    Boolean @default(true) @map("is_active")
+  id          String   @id @default(uuid()) @map("brand_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  brandName   String   @map("brand_name")
+  description String?
+  logoUrl     String?  @map("logo_url")
+  website     String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   shop     Shop      @relation(fields: [tenantId], references: [id])
   products Product[]
 
+  @@unique([tenantId, brandName])
+  @@index([tenantId])
   @@map("brands")
 }
 
 model Unit {
-  id           String @id @default(uuid()) @map("unit_id") @db.Uuid
-  tenantId     String @map("tenant_id") @db.Uuid
-  name         String @map("unit_name") @db.VarChar(50)
-  abbreviation String @db.VarChar(20)
+  id          String   @id @default(uuid()) @map("unit_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  unitName    String   @map("unit_name")
+  unitCode    String   @map("unit_code")
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   shop     Shop      @relation(fields: [tenantId], references: [id])
   products Product[]
 
+  @@unique([tenantId, unitName])
+  @@index([tenantId])
   @@map("units")
 }
 
@@ -304,23 +336,23 @@ model Product {
   warrantyMonths      Int?         @map("warranty_months")
   hasVariants         Boolean      @default(false) @map("has_variants")
   isActive            Boolean      @default(true) @map("is_active")
-  createdBy           String?      @map("created_by")
+  createdBy           String?      @map("created_by") @db.Uuid
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
 
-  shop              Shop               @relation(fields: [tenantId], references: [id])
-  category          Category           @relation(fields: [categoryId], references: [id])
-  brand             Brand?             @relation(fields: [brandId], references: [id])
-  unit              Unit?              @relation(fields: [unitId], references: [id])
-  creator           User?              @relation("ProductCreatedBy", fields: [createdBy], references: [user_id])
-  variants          ProductVariant[]
-  images            ProductImage[]
-  stocks            Stock[]
-  stockMovements    StockMovement[]
-  grnItems          GrnItem[]
-  salesInvoiceItems SalesInvoiceItem[]
-  returnedItems     SalesReturnItem[]
-  supplierProducts  SupplierProduct[]
+  shop                Shop               @relation(fields: [tenantId], references: [id])
+  category            Category           @relation(fields: [categoryId], references: [id])
+  brand               Brand?             @relation(fields: [brandId], references: [id])
+  unit                Unit?              @relation(fields: [unitId], references: [id])
+  creator             User?              @relation("ProductCreatedBy", fields: [createdBy], references: [user_id])
+  variants            ProductVariant[]
+  images              ProductImage[]
+  stocks              Stock[]
+  stockMovements      StockMovement[]
+  grnItems            GrnItem[]
+  salesInvoiceItems   SalesInvoiceItem[]
+  returnedItems       SalesReturnItem[]
+  supplierProducts    SupplierProduct[]
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
@@ -381,7 +413,7 @@ model Warehouse {
   code      String?  @unique @map("warehouse_code") @db.VarChar(50)
   address   String?  @db.Text
   capacity  Decimal? @db.Decimal(10, 2)
-  managerId String?  @map("manager_id")
+  managerId String?  @map("manager_id") @db.Uuid
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -442,7 +474,7 @@ model StockMovement {
   referenceId   String? @map("reference_id") @db.Uuid
   notes         String? @db.Text
 
-  createdBy String?  @map("created_by")
+  createdBy String?  @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
 
   shop      Shop            @relation(fields: [tenantId], references: [id])
@@ -465,7 +497,7 @@ model GoodsReceivedNote {
   status       String   @default("completed") @db.VarChar(20)
   notes        String?  @db.Text
 
-  receivedBy String?  @map("received_by")
+  receivedBy String?  @map("received_by") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
@@ -519,7 +551,7 @@ model SalesInvoice {
   status        InvoiceStatus
   notes         String?       @db.Text
 
-  cashierId String?  @map("cashier_id")
+  cashierId String?  @map("cashier_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -596,8 +628,8 @@ model SalesReturn {
   refundMethod RefundMethod @map("refund_method")
   reason       String?      @db.Text
 
-  createdBy  String?  @map("created_by")
-  approvedBy String?  @map("approved_by")
+  createdBy  String?  @map("created_by") @db.Uuid
+  approvedBy String?  @map("approved_by") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
@@ -697,17 +729,17 @@ model Supplier {
 }
 
 model SupplierRequest {
-  id          String   @id @default(uuid()) @map("request_id") @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  requestNo   String   @map("request_no") @db.VarChar(50)
-  supplierId  String?  @map("supplier_id") @db.Uuid
-  priority    String   @default("Normal") @db.VarChar(20)
-  notes       String?  @db.Text
-  status      String   @default("Draft") @db.VarChar(30)
-  items       Json     @default("[]")
-  createdBy   String?  @map("created_by")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(uuid()) @map("request_id") @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  requestNo  String   @map("request_no") @db.VarChar(50)
+  supplierId String?  @map("supplier_id") @db.Uuid
+  priority   String   @default("Normal") @db.VarChar(20)
+  notes      String?  @db.Text
+  status     String   @default("Draft") @db.VarChar(30)
+  items      Json     @default("[]")
+  createdBy  String?  @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   shop     Shop      @relation(fields: [tenantId], references: [id])
   supplier Supplier? @relation(fields: [supplierId], references: [id])
@@ -724,8 +756,8 @@ model SupplierProduct {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  supplier      Supplier @relation(fields: [supplierId], references: [id])
-  product       Product  @relation(fields: [productId], references: [id])
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  product  Product  @relation(fields: [productId], references: [id])
 
   @@unique([supplierId, productId])
   @@map("supplier_products")
@@ -735,16 +767,16 @@ model SupplierProduct {
 model Notification {
   id        String   @id @default(uuid()) @map("notification_id") @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid
-  userId    String?  @map("user_id") 
+  userId    String?  @map("user_id") @db.Uuid 
   title     String
   message   String
-  type      String   // INFO, WARNING, SUCCESS, ERROR
+  type      String // INFO, WARNING, SUCCESS, ERROR
   isRead    Boolean  @default(false) @map("is_read")
-  link      String?  
+  link      String?
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  shop Shop @relation(fields: [tenantId], references: [id])
+  shop Shop  @relation(fields: [tenantId], references: [id])
   user User? @relation("UserNotifications", fields: [userId], references: [user_id])
 
   @@map("notifications")
@@ -752,21 +784,21 @@ model Notification {
 
 // ================= EXPENSES & LABOUR (CATEGORY C) =================
 model Expense {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  userId      String   @map("user_id")
-  entryType   String   @map("entry_type")
-  category    String   @default("Category C")
-  description String   @db.Text
-  amount      Decimal  @db.Decimal(10, 2)
-  status      String   @default("COMPLETED")
-  labourerName String? @map("labourer_name")
-  labourerPhone String? @map("labourer_phone")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+  entryType     String   @map("entry_type")
+  category      String   @default("Category C")
+  description   String   @db.Text
+  amount        Decimal  @db.Decimal(10, 2)
+  status        String   @default("COMPLETED")
+  labourerName  String?  @map("labourer_name")
+  labourerPhone String?  @map("labourer_phone")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   shop Shop @relation(fields: [tenantId], references: [id])
-  user User @relation(fields: [userId], references: [user_id])
+  user User? @relation(fields: [userId], references: [user_id])
 
   @@index([tenantId, createdAt])
   @@map("expenses")

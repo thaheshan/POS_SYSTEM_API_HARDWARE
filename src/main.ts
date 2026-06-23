@@ -18,11 +18,11 @@ async function bootstrap() {
 
   app.enableCors({
     origin: [
-      'http://localhost:3000', 
-      'http://localhost:3001', 
+      'http://localhost:3000',
+      'http://localhost:3001',
       'http://localhost:4000',
       ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : []),
-    ].filter(Boolean) as string[],
+    ].filter(Boolean),
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Authorization, Accept',
@@ -36,8 +36,9 @@ async function bootstrap() {
   if (process.env.NODE_ENV !== 'production') {
     app.useGlobalInterceptors(new DetailedLoggingInterceptor());
   }
-
+  // * Apply filters
   const httpAdapterHost = app.get(HttpAdapterHost);
+
   app.useGlobalFilters(new LoggingExceptionFilter(httpAdapterHost));
 
   const port = parseInt(process.env.PORT || '3000', 10);
