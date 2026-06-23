@@ -11,20 +11,7 @@ import { calculateStockStatus } from 'src/utils/stockHelper';
 
 type StockOverviewPayload = Prisma.StockGetPayload<{
   include: {
-    product: {
-      select: {
-        name: true;
-        sku: true;
-        minimumStockLevel: true;
-        sellingPrice: true;
-        category: { select: { categoryName: true } };
-        images: {
-          select: { imageUrl: true; isPrimary: true };
-          orderBy: { isPrimary: 'desc' };
-          take: 1;
-        };
-      };
-    };
+    product: { select: { name: true; sku: true; minimumStockLevel: true; sellingPrice: true; purchasePrice: true; category: { select: { name: true } }; images: { select: { imageUrl: true; isPrimary: true }; orderBy: { isPrimary: 'desc' }; take: 1 } } };
     warehouse: {
       select: { name: true };
     };
@@ -52,7 +39,8 @@ export class StockService {
             sku: true,
             minimumStockLevel: true,
             sellingPrice: true,
-            category: { select: { categoryName: true } },
+            purchasePrice: true,
+            category: { select: { name: true } },
             images: {
               select: { imageUrl: true, isPrimary: true },
               orderBy: { isPrimary: 'desc' },
@@ -92,20 +80,7 @@ export class StockService {
         tenantId,
       },
       include: {
-        product: {
-          select: {
-            name: true,
-            sku: true,
-            minimumStockLevel: true,
-            sellingPrice: true,
-            category: { select: { categoryName: true } },
-            images: {
-              select: { imageUrl: true, isPrimary: true },
-              orderBy: { isPrimary: 'desc' },
-              take: 1,
-            },
-          },
-        },
+        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, purchasePrice: true, category: { select: { name: true } }, images: { select: { imageUrl: true, isPrimary: true }, orderBy: { isPrimary: 'desc' }, take: 1 } } },
         warehouse: { select: { name: true } },
       },
     });
@@ -428,12 +403,14 @@ export class StockService {
       product_name: stock.product.name,
       sku: stock.product.sku,
       selling_price: Number(stock.product.sellingPrice),
-      category_name: stock.product.category?.categoryName || 'All',
-      image_url: stock.product.images?.[0]?.imageUrl ?? null,
+      purchase_price: Number(stock.product.purchasePrice ?? 0),
+      category_name: stock.product.category?.name || 'All',
+      image_url: (stock.product as any).images?.[0]?.imageUrl ?? null,
       quantity,
       reserved_quantity: reserved,
       available_quantity: stockStatus.available_quantity,
       damaged_quantity: Number(stock.damagedQuantity),
+      minimum_stock_level: stock.product.minimumStockLevel ? Number(stock.product.minimumStockLevel) : 0,
       low_stock: stockStatus.low_stock,
       out_of_stock: stockStatus.out_of_stock,
     };
