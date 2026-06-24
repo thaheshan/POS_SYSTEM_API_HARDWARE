@@ -90,6 +90,12 @@ enum SubscriptionStatus {
   SUSPENDED
 }
 
+enum ContactStatus {
+  NEW
+  READ
+  REPLIED
+}
+
 // ================= CORE / TENANT MODELS =================
 model User {
   user_id       String  @id @default(uuid())
@@ -770,4 +776,19 @@ model Expense {
 
   @@index([tenantId, createdAt])
   @@map("expenses")
+}
+
+// ================= CONTACT MESSAGES =================
+model ContactMessage {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String        @db.VarChar(100)
+  email     String        @db.VarChar(200)
+  phone     String?       @db.VarChar(50)
+  company   String?       @db.VarChar(200)
+  message   String        @db.Text
+  status    ContactStatus @default(NEW)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@map("contact_messages")
 }
