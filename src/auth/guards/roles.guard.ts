@@ -16,10 +16,12 @@ export class RolesGuard implements CanActivate {
     const user: AuthUser = request.user;
 
     if (!user || !user.role) {
+      console.log(`RolesGuard Failed: No user or user.role found in request`);
       throw new ForbiddenException('INSUFFICIENT_PERMISSIONS');
     }
 
     if (!requiredRoles.includes(user.role)) {
+      console.log(`RolesGuard Failed: User role "${user.role}" not in requiredRoles [${requiredRoles.join(', ')}]`);
       throw new ForbiddenException('INSUFFICIENT_PERMISSIONS');
     }
 
