@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
+import { SalesReturnsModule } from './sales/sales-returns/sales-returns.module';
 import { ReportsModule } from './reports/reports.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -29,6 +30,7 @@ import { ContactModule } from './contact/contact.module';
     PrismaModule,
     SystemModule,
     AuthModule,
+    SalesReturnsModule,
     ReportsModule,
     InventoryModule,
     ScheduleModule.forRoot(),

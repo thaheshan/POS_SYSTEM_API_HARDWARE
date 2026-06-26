@@ -399,7 +399,7 @@ model Warehouse {
   stockMovements     StockMovement[]
   goodsReceivedNotes GoodsReceivedNote[]
   salesInvoiceItems  SalesInvoiceItem[]
-  returnedItems      SalesReturnItem[]
+  salesReturnItems   SalesReturnItem[]
 
   @@map("warehouses")
 }
