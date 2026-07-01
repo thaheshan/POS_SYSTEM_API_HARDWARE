@@ -17,6 +17,16 @@ export class CreateProductDto {
   @IsOptional()
   description?: string;
 
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  sellType?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  measurementUnit?: string;
+
   @ApiProperty()
   @IsUUID()
   @IsNotEmpty()

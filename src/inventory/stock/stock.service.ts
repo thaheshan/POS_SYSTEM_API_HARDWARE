@@ -12,7 +12,7 @@ import { calculateStockStatus } from 'src/utils/stockHelper';
 
 type StockOverviewPayload = Prisma.StockGetPayload<{
   include: {
-    product: { select: { name: true; sku: true; minimumStockLevel: true; sellingPrice: true; purchasePrice: true; category: { select: { name: true } }; images: { select: { imageUrl: true; isPrimary: true }; orderBy: { isPrimary: 'desc' }; take: 1 } } };
+    product: { select: { name: true; sku: true; minimumStockLevel: true; sellingPrice: true; purchasePrice: true; sellType: true; measurementUnit: true; category: { select: { name: true } }; images: { select: { imageUrl: true; isPrimary: true }; orderBy: { isPrimary: 'desc' }; take: 1 } } };
     warehouse: {
       select: { name: true };
     };
@@ -41,6 +41,8 @@ export class StockService {
             minimumStockLevel: true,
             sellingPrice: true,
             purchasePrice: true,
+            sellType: true,
+            measurementUnit: true,
             category: { select: { name: true } },
             images: {
               select: { imageUrl: true, isPrimary: true },
@@ -81,7 +83,7 @@ export class StockService {
         tenantId,
       },
       include: {
-        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, purchasePrice: true, category: { select: { name: true } }, images: { select: { imageUrl: true, isPrimary: true }, orderBy: { isPrimary: 'desc' }, take: 1 } } },
+        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, purchasePrice: true, sellType: true, measurementUnit: true, category: { select: { name: true } }, images: { select: { imageUrl: true, isPrimary: true }, orderBy: { isPrimary: 'desc' }, take: 1 } } },
         warehouse: { select: { name: true } },
       },
     });
@@ -399,6 +401,8 @@ export class StockService {
       minimum_stock_level: stock.product.minimumStockLevel ? Number(stock.product.minimumStockLevel) : 0,
       low_stock: stockStatus.low_stock,
       out_of_stock: stockStatus.out_of_stock,
+      sellType: stock.product.sellType,
+      measurementUnit: stock.product.measurementUnit,
     };
   }
   private applyDynamicFilters(

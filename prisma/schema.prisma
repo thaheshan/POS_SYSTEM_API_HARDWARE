@@ -309,6 +309,8 @@ model Product {
   reorderQuantity     Decimal?     @map("reorder_quantity") @db.Decimal(10, 2)
   warrantyMonths      Int?         @map("warranty_months")
   hasVariants         Boolean      @default(false) @map("has_variants")
+  sellType            String       @default("FIX") @map("sell_type")
+  measurementUnit     String?      @map("measurement_unit")
   isActive            Boolean      @default(true) @map("is_active")
   createdBy           String?      @map("created_by")
   createdAt           DateTime     @default(now()) @map("created_at")

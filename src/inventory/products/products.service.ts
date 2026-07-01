@@ -63,6 +63,8 @@ export class ProductsService {
           taxCategory: dto.taxCategory as any,
           taxRate: taxRate,
           minimumStockLevel: minimumStockLevel,
+          sellType: dto.sellType || 'FIX',
+          measurementUnit: dto.measurementUnit,
           createdBy,
         },
       });
