@@ -114,6 +114,7 @@ export class DashboardService {
             tenantId,
             createdAt: { gte: monthStart, lt: nextMonthStart },
             status: 'COMPLETED',
+            invoiceNumber: { not: { startsWith: 'RET-' } },
           }
         },
         select: {
@@ -132,16 +133,16 @@ export class DashboardService {
     const expensesTotal = Number(monthExpenses._sum.amount ?? 0);
     
     let cogsTotal = 0;
-    let grossProfit = 0;
     for (const item of monthSalesItems as any[]) {
       const qty = Number(item.quantity ?? 0);
       // Use saved costPrice first, fall back to product's purchasePrice
       const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
       const itemCogs = qty * unitCost;
-      const itemMargin = Number(item.lineTotal ?? 0) - itemCogs;
       cogsTotal += itemCogs;
-      grossProfit += itemMargin;
     }
+    
+    // Gross Profit is actual Revenue minus actual COGS
+    const grossProfit = salesTotal - cogsTotal;
     
     // Net Profit = Gross Product Margin - Category C Expenses
     const netRevenue = grossProfit - expensesTotal;
@@ -149,7 +150,7 @@ export class DashboardService {
     return {
       todaySales: Number(todayAgg._sum.totalAmount ?? 0),
       todayTransactions: todayAgg._count.id,
-      monthlyRevenue: netRevenue,
+      monthlyRevenue: salesTotal,
       monthlyProfit: netRevenue,
       monthlySales: salesTotal, // useful for potential debugging or future UI
       monthlyPurchases: purchasesTotal,
@@ -246,6 +247,7 @@ export class DashboardService {
         select: {
           createdAt: true,
           totalAmount: true,
+          invoiceNumber: true,
           items: {
             select: {
               quantity: true,
@@ -292,11 +294,13 @@ export class DashboardService {
         cur.revenue += Number(inv.totalAmount);
         cur.sales += 1;
         let cogs = 0;
-        for (const item of (inv.items || [])) {
-          const qty = Number(item.quantity ?? 0);
-          // Use saved costPrice; fall back to product's purchasePrice for older records
-          const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
-          cogs += qty * unitCost;
+        // Ignore negative items from old RET- invoices to prevent double-deducting COGS
+        if (!inv.invoiceNumber.startsWith('RET-')) {
+          for (const item of (inv.items || [])) {
+            const qty = Number(item.quantity ?? 0);
+            const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
+            cogs += qty * unitCost;
+          }
         }
         cur.cost += cogs;
         cur.margin += Number(inv.totalAmount) - cogs;
@@ -413,6 +417,7 @@ export class DashboardService {
           invoice: {
             tenantId,
             status: 'COMPLETED',
+            invoiceNumber: { not: { startsWith: 'RET-' } },
             ...(Object.keys(whereDateSales).length > 0 && { createdAt: whereDateSales }),
           }
         },
@@ -430,15 +435,15 @@ export class DashboardService {
     const totalExpenses = Number(expensesAgg._sum.amount ?? 0);
     
     let cogsTotal = 0;
-    let grossProfit = 0;
     for (const item of salesItemsAgg as any[]) {
       const qty = Number(item.quantity ?? 0);
       const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
       const itemCogs = qty * unitCost;
-      const itemMargin = Number(item.lineTotal ?? 0) - itemCogs;
       cogsTotal += itemCogs;
-      grossProfit += itemMargin;
     }
+    
+    // Gross Profit is actual Revenue minus actual COGS
+    const grossProfit = totalSales - cogsTotal;
     
     // Net Profit = Gross Product Margin - Category C Expenses
     const netProfit = grossProfit - totalExpenses;
