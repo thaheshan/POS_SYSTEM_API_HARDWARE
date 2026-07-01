@@ -51,25 +51,51 @@ export class AdvancedSalesService {
       // 1. Build return items, validate quantities, and restore stock
       const returnItems: any[] = [];
       let totalRefund = 0;
+      let totalTaxRefund = 0;
 
       for (const item of dto.items) {
         const invoiceItem = invoice.items.find((i: any) => i.productId === item.productId);
         if (!invoiceItem) throw new BadRequestException(`Product ${item.productId} not found on original invoice.`);
 
         const qty = Number(item.quantity);
+        const originalQty = Number(invoiceItem.quantity);
+
+        if (qty > originalQty) {
+          throw new BadRequestException(`Cannot return more than available on invoice. Requested: ${qty}, Available: ${originalQty}`);
+        }
+
         const unitPrice = Number(item.price) || Number(invoiceItem.unitPrice);
+
+        // Under Tax Inclusive pricing, the unitPrice already includes the tax.
+        // Therefore, the total refund for this line is exactly unitPrice * qty.
         const lineTotal = unitPrice * qty;
         totalRefund += lineTotal;
+
+        // Extract the tax portion strictly for the contra invoice (accounting purposes)
+        const taxRate = Number(invoiceItem.taxRate) || 0;
+        const basePrice = lineTotal / (1 + (taxRate / 100));
+        const lineTaxAmount = lineTotal - basePrice;
+        totalTaxRefund += lineTaxAmount;
 
         const condition = (item.condition && ['GOOD', 'DAMAGED', 'EXPIRED'].includes(item.condition.toUpperCase())
           ? item.condition.toUpperCase()
           : 'GOOD') as any;
 
         // Restore stock
-        const stockRecord = await tx.stock.findFirst({
-          where: { productId: item.productId, warehouseId: item.warehouseId, tenantId },
-        });
-        if (!stockRecord) throw new BadRequestException(`Stock record not found for product ${item.productId}`);
+        let stockRecord = item.warehouseId 
+          ? await tx.stock.findFirst({ where: { productId: item.productId, warehouseId: item.warehouseId, tenantId } })
+          : null;
+        
+        if (!stockRecord) {
+          stockRecord = await tx.stock.findFirst({ where: { productId: item.productId, tenantId } });
+        }
+
+        if (!stockRecord) {
+          const product = await tx.product.findFirst({ where: { id: item.productId, tenantId } });
+          throw new BadRequestException(`Stock record not found for product "${product?.name || item.productId}"`);
+        }
+
+        const resolvedWarehouseId = stockRecord.warehouseId;
 
         await tx.stock.update({
           where: { id: stockRecord.id },
@@ -81,7 +107,7 @@ export class AdvancedSalesService {
           data: {
             tenantId,
             productId: item.productId,
-            warehouseId: item.warehouseId,
+            warehouseId: resolvedWarehouseId,
             movementType: 'RETURN',
             quantity: qty,
             beforeQuantity: stockRecord.quantity,
@@ -94,14 +120,33 @@ export class AdvancedSalesService {
         returnItems.push({
           invoiceItemId: invoiceItem.id,
           productId: item.productId,
-          warehouseId: item.warehouseId,
+          warehouseId: resolvedWarehouseId,
           quantity: qty,
           condition,
           unitPrice,
           lineTotal,
+          taxRate,
+          lineTaxAmount,
           costPrice: invoiceItem.costPrice ? Number(invoiceItem.costPrice) : 0,
         });
+
+        // Mutate original invoice item
+        const newQty = originalQty - qty;
+        const newTotal = newQty * unitPrice;
+        await tx.salesInvoiceItem.update({
+          where: { id: invoiceItem.id },
+          data: {
+            quantity: newQty,
+            lineTotal: newTotal,
+            taxAmount: newTotal - (newTotal / (1 + (taxRate / 100))),
+            profit: newTotal - (Number(invoiceItem.costPrice || 0) * newQty),
+          },
+        });
       }
+
+      // Mutate original invoice totals - REMOVED. 
+      // We do NOT mutate the original invoice totals because the new RET- invoice 
+      // handles the financial deduction. Mutating both would double-deduct revenue.
 
       // 2. Create the SalesReturn record
       const retNumber = this.makeNumber('RET');
@@ -133,50 +178,29 @@ export class AdvancedSalesService {
         include: { items: true },
       });
 
-      // 3. Create a Contra Invoice to deduct revenue on the current day
+      // 3. Create a Return Invoice (negative) so the return appears in the invoice list
+      //    The original invoice is ALREADY mutated above to prevent duplicate returns.
       await tx.salesInvoice.create({
         data: {
           tenantId,
           branchId: invoice.branchId,
           customerId: invoice.customerId ?? undefined,
-          invoiceNumber: `CN-${retNumber}`, // Credit Note style invoice number
+          invoiceNumber: retNumber,
           invoiceDate: new Date(),
           invoiceTime: new Date(),
           saleType: 'CASH',
           subtotal: -totalRefund,
           discountAmount: 0,
-          taxAmount: 0,
+          taxAmount: -totalTaxRefund,
           totalAmount: -totalRefund,
           paidAmount: -totalRefund,
           balance: 0,
           paymentStatus: 'PAID',
           status: 'COMPLETED',
-          notes: `RETURN for invoice ${invoice.invoiceNumber} | Reason: ${dto.reason}`,
+          notes: `RETURN | Ref: ${invoice.invoiceNumber} | Reason: ${dto.reason}`,
           cashierId: userId,
-          items: {
-            create: returnItems.map(item => {
-              const itemCostPrice = Number(item.costPrice ?? 0);
-              const itemQty = -item.quantity;
-              const itemLineTotal = -item.lineTotal;
-              const itemProfit = itemLineTotal - (itemCostPrice * itemQty);
-              return {
-                productId: item.productId,
-                warehouseId: item.warehouseId,
-                quantity: itemQty,
-                unitPrice: item.unitPrice,
-                lineTotal: itemLineTotal,
-                taxRate: 0,
-                taxAmount: 0,
-                costPrice: itemCostPrice,
-                profit: itemProfit,
-              };
-            }),
-          },
         },
       });
-
-      // Note: We DO NOT change the original invoice status to 'RETURNED'.
-      // Keeping it 'COMPLETED' ensures historical revenue from the day it was sold remains accurate.
 
       // 4. Create a notification
       this.prisma.notification.create({
@@ -184,7 +208,7 @@ export class AdvancedSalesService {
           tenantId,
           userId,
           title: 'Return Processed',
-          message: `Return ${retNumber} for Rs. ${totalRefund.toLocaleString()} has been processed.`,
+          message: `Return ${retNumber} for Rs. ${totalRefund.toLocaleString()} has been processed and original invoice adjusted.`,
           type: 'WARNING',
           link: '/pos/return',
         },
@@ -487,23 +511,37 @@ export class AdvancedSalesService {
     return this.prisma.$transaction(async (tx) => {
       // 1. Handle Returned Items
       const returnedItemsWithCost: any[] = [];
+      let totalRefund = 0;
+      let totalTaxRefund = 0;
       if (dto.returnedItems && dto.returnedItems.length > 0) {
         // Restock returned items
         for (const item of dto.returnedItems) {
-          const stock = await tx.stock.findFirst({
-            where: { tenantId, productId: item.productId, warehouseId: item.warehouseId },
-          });
+          // Resolve stock for returned item — try with warehouseId, fallback to any stock for product
+          let stock = item.warehouseId
+            ? await tx.stock.findFirst({ where: { tenantId, productId: item.productId, warehouseId: item.warehouseId } })
+            : null;
+
+          if (!stock) {
+            stock = await tx.stock.findFirst({ where: { tenantId, productId: item.productId } });
+          }
  
           if (stock) {
             await tx.stock.update({
               where: { id: stock.id },
-              data: { availableQuantity: { increment: item.quantity } },
+              data: { quantity: { increment: item.quantity } },
             });
           }
  
-          // Get original cost price
-          const originalItem = (invoice as any).items?.find((i: any) => i.productId === item.productId);
-          let costPrice = originalItem?.costPrice ? Number(originalItem.costPrice) : 0;
+          // Find original item and validate quantity
+          const invoiceItem = (invoice as any).items?.find((i: any) => i.productId === item.productId);
+          if (!invoiceItem) throw new BadRequestException(`Product ${item.productId} not found on original invoice.`);
+
+          const originalQty = Number(invoiceItem.quantity);
+          if (item.quantity > originalQty) {
+            throw new BadRequestException(`Cannot return more than available on invoice. Requested: ${item.quantity}, Available: ${originalQty}`);
+          }
+
+          let costPrice = invoiceItem.costPrice ? Number(invoiceItem.costPrice) : 0;
           if (!costPrice) {
             const product = await tx.product.findFirst({ where: { id: item.productId, tenantId } });
             costPrice = product?.purchasePrice ? Number(product.purchasePrice) : 0;
@@ -513,14 +551,38 @@ export class AdvancedSalesService {
             ...item,
             costPrice,
           });
+
+          // Mutate original invoice item
+          const newQty = originalQty - item.quantity;
+          const unitPrice = Number(item.price) || Number(invoiceItem.unitPrice);
+          const newTotal = newQty * unitPrice;
+          const taxRate = Number(invoiceItem.taxRate) || 0;
+          const newTax = newTotal - (newTotal / (1 + (taxRate / 100)));
+          const profit = newTotal - (costPrice * newQty);
+
+          await tx.salesInvoiceItem.update({
+            where: { id: invoiceItem.id },
+            data: {
+              quantity: newQty,
+              lineTotal: newTotal,
+              taxAmount: newTax,
+              profit: profit,
+            },
+          });
+
+          // Track totals for original invoice mutation
+          totalRefund += (item.quantity * unitPrice);
+          totalTaxRefund += ((item.quantity * unitPrice) - ((item.quantity * unitPrice) / (1 + (taxRate / 100))));
  
           await tx.stockMovement.create({
             data: {
               tenantId,
               productId: item.productId,
-              warehouseId: item.warehouseId,
+              warehouseId: stock?.warehouseId || item.warehouseId,
               movementType: 'RETURN',
               quantity: item.quantity,
+              beforeQuantity: stock?.quantity ?? 0,
+              afterQuantity: Number(stock?.quantity ?? 0) + item.quantity,
               referenceType: 'EXCHANGE_RETURN',
               notes: `Returned via exchange from invoice ${invoice.invoiceNumber}`,
               createdBy: userId,
@@ -560,32 +622,53 @@ export class AdvancedSalesService {
       const newItemsWithCost: any[] = [];
       if (dto.newItems && dto.newItems.length > 0) {
         for (const item of dto.newItems) {
-          const stock = await tx.stock.findFirst({
-            where: { tenantId, productId: item.productId, warehouseId: item.warehouseId },
-          });
- 
-          if (stock) {
-            await tx.stock.update({
-              where: { id: stock.id },
-              data: { availableQuantity: { decrement: item.quantity } },
-            });
+          // Resolve stock — first try with provided warehouseId, fallback to any stock for this product
+          let stock = item.warehouseId
+            ? await tx.stock.findFirst({ where: { tenantId, productId: item.productId, warehouseId: item.warehouseId } })
+            : null;
+
+          if (!stock) {
+            // Fallback: find any stock record for this product in the tenant
+            stock = await tx.stock.findFirst({ where: { tenantId, productId: item.productId } });
           }
+
+          if (!stock) {
+            const product = await tx.product.findFirst({ where: { id: item.productId, tenantId } });
+            throw new BadRequestException(`No stock record found for product "${product?.name || item.productId}". Please add stock first.`);
+          }
+
+          if (Number(stock.quantity) < item.quantity) {
+            const product = await tx.product.findFirst({ where: { id: item.productId, tenantId } });
+            throw new BadRequestException(`Insufficient stock for "${product?.name || item.productId}". Available: ${stock.quantity}, Requested: ${item.quantity}`);
+          }
+
+          const resolvedWarehouseId = stock.warehouseId;
+
+          await tx.stock.update({
+            where: { id: stock.id },
+            data: { quantity: { decrement: item.quantity } },
+          });
  
           const product = await tx.product.findFirst({ where: { id: item.productId, tenantId } });
           const costPrice = product?.purchasePrice ? Number(product.purchasePrice) : 0;
+          const taxRate = Number(product?.taxRate ?? 0);
  
           newItemsWithCost.push({
             ...item,
             costPrice,
+            taxRate,
+            warehouseId: resolvedWarehouseId,
           });
  
           await tx.stockMovement.create({
             data: {
               tenantId,
               productId: item.productId,
-              warehouseId: item.warehouseId,
+              warehouseId: resolvedWarehouseId,
               movementType: 'OUT',
               quantity: -item.quantity,
+              beforeQuantity: stock.quantity,
+              afterQuantity: Number(stock.quantity) - item.quantity,
               referenceType: 'EXCHANGE_SALE',
               notes: `New item issued via exchange from invoice ${invoice.invoiceNumber}`,
               createdBy: userId,
@@ -593,38 +676,28 @@ export class AdvancedSalesService {
           });
         }
       }
+
+      // Mutate original invoice totals if there were returns - REMOVED.
+      // We do NOT mutate the original invoice totals because the discount on the EXC- 
+      // invoice handles the financial deduction. Mutating both would double-deduct revenue.
  
-      // 3. Create the Contra/Delta Invoice
-      // This invoice captures the net financial impact and contains all line items (positive and negative)
+      // 3. Create the Exchange Invoice for the new items
+      // This invoice uses the returnAmount as a discount (Exchange Credit) so the customer only pays the delta.
       const invoiceItems: any[] = [];
       
-      // Add negative lines for returned items
-      if (dto.returnedItems) {
-        for (const item of returnedItemsWithCost) {
-          const itemCostPrice = Number(item.costPrice ?? 0);
-          const itemQty = -item.quantity;
-          const itemLineTotal = -(item.quantity * item.price);
-          const itemProfit = itemLineTotal - (itemCostPrice * itemQty);
-          invoiceItems.push({
-            productId: item.productId,
-            warehouseId: item.warehouseId,
-            quantity: itemQty,
-            unitPrice: item.price,
-            lineTotal: itemLineTotal,
-            taxRate: 0,
-            taxAmount: 0,
-            costPrice: itemCostPrice,
-            profit: itemProfit,
-          });
-        }
-      }
- 
-      // Add positive lines for new items
+      // Note: We no longer add negative lines because the original invoice is mutated directly.
+      // Add positive lines for new items with tax-inclusive tax extraction
+      let totalNewTax = 0;
       if (dto.newItems) {
         for (const item of newItemsWithCost) {
           const itemCostPrice = Number(item.costPrice ?? 0);
           const itemQty = item.quantity;
           const itemLineTotal = item.quantity * item.price;
+          const itemTaxRate = Number(item.taxRate ?? 0);
+          // Tax-inclusive: extract tax from the sticker price
+          const itemBasePrice = itemTaxRate > 0 ? itemLineTotal / (1 + (itemTaxRate / 100)) : itemLineTotal;
+          const itemTaxAmount = itemLineTotal - itemBasePrice;
+          totalNewTax += itemTaxAmount;
           const itemProfit = itemLineTotal - (itemCostPrice * itemQty);
           invoiceItems.push({
             productId: item.productId,
@@ -632,8 +705,8 @@ export class AdvancedSalesService {
             quantity: itemQty,
             unitPrice: item.price,
             lineTotal: itemLineTotal,
-            taxRate: 0,
-            taxAmount: 0,
+            taxRate: itemTaxRate,
+            taxAmount: itemTaxAmount,
             costPrice: itemCostPrice,
             profit: itemProfit,
           });
@@ -649,11 +722,11 @@ export class AdvancedSalesService {
           invoiceDate: now,
           invoiceTime: now,
           saleType: 'CASH',
-          subtotal: dto.delta,
-          discountAmount: 0,
-          taxAmount: 0,
-          totalAmount: dto.delta,
-          paidAmount: dto.delta > 0 ? dto.delta : 0, // Customer pays delta if positive
+          subtotal: dto.newAmount, // Subtotal of only the new items (tax inclusive)
+          discountAmount: dto.returnAmount, // Exchange credit applied as discount
+          taxAmount: totalNewTax, // Extracted tax portion (for accounting records)
+          totalAmount: dto.delta > 0 ? dto.delta : 0, // Customer pays the difference
+          paidAmount: dto.delta > 0 ? dto.delta : 0,
           balance: 0,
           paymentStatus: 'PAID',
           status: 'COMPLETED',
