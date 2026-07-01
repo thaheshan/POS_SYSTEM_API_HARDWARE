@@ -1,5 +1,9 @@
 // POST /2fa/verify
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as speakeasy from 'speakeasy';
 import { UserService } from '../../user/user.service';
 import { TotpSecretCryptoService } from './totp-secret-crypto.service';
@@ -13,12 +17,14 @@ export class VerifyTOTPService {
 
   async verify(userId: string, token: string): Promise<void> {
     const user = await this.userService.findById(userId);
-    if (!user || !user.totp_secret) {
+    if (!user || !user.twoFactorSecret) {
       throw new BadRequestException('TOTP not set up');
     }
 
-    const storedSecret = user.totp_secret;
-    const secretToVerify = this.totpSecretCryptoService.isEncrypted(storedSecret)
+    const storedSecret = user.twoFactorSecret;
+    const secretToVerify = this.totpSecretCryptoService.isEncrypted(
+      storedSecret,
+    )
       ? this.totpSecretCryptoService.decrypt(storedSecret)
       : storedSecret;
 
@@ -35,8 +41,11 @@ export class VerifyTOTPService {
 
     // Migrate legacy plaintext secrets to encrypted storage after first successful verification.
     if (!this.totpSecretCryptoService.isEncrypted(storedSecret)) {
-      const encryptedSecret = this.totpSecretCryptoService.encrypt(storedSecret);
-      await this.userService.updateUser(userId, { totp_secret: encryptedSecret });
+      const encryptedSecret =
+        this.totpSecretCryptoService.encrypt(storedSecret);
+      await this.userService.updateUser(userId, {
+        totp_secret: encryptedSecret,
+      });
     }
 
     // Enable 2FA for the user in the DB

@@ -12,7 +12,9 @@ export class SetupTOTPService {
     private readonly totpSecretCryptoService: TotpSecretCryptoService,
   ) {}
 
-  async setup(userId: string): Promise<{ secret: string; qr_code_url: string }> {
+  async setup(
+    userId: string,
+  ): Promise<{ secret: string; qr_code_url: string }> {
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new BadRequestException('User not found');
@@ -25,7 +27,9 @@ export class SetupTOTPService {
 
     // Store encrypted secret at rest to prevent seed exposure from raw DB leaks.
     const encryptedSecret = this.totpSecretCryptoService.encrypt(secret.base32);
-    await this.userService.updateUser(userId, { totp_secret: encryptedSecret });
+    await this.userService.updateUser(userId, {
+      twoFactorSecret: encryptedSecret,
+    });
 
     const otpauthUrl = speakeasy.otpauthURL({
       secret: secret.base32,

@@ -5,7 +5,8 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { DetailedLoggingInterceptor } from './common/interceptors/detailed-logging.interceptor';
 import { LoggingExceptionFilter } from './common/filters/logging-exception.filter';
-import { VersioningType } from '@nestjs/common';
+import { VersioningType, ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,6 +17,13 @@ async function bootstrap() {
     defaultVersion: '1',
   });
 
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
   app.enableCors({
     origin: [
       'http://localhost:3000', 
@@ -36,6 +44,16 @@ async function bootstrap() {
   if (process.env.NODE_ENV !== 'production') {
     app.useGlobalInterceptors(new DetailedLoggingInterceptor());
   }
+  // * Apply filters
+  app.useGlobalFilters(new LoggingExceptionFilter(app.get(HttpAdapterHost)));
+
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Hardware POS API')
+    .setDescription('API documentation for the Hardware POS system')
+    .setVersion('1.0')
+    .build();
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, swaggerDocument);
 
   const httpAdapterHost = app.get(HttpAdapterHost);
   app.useGlobalFilters(new LoggingExceptionFilter(httpAdapterHost));

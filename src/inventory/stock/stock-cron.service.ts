@@ -1,7 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { InvoiceStatus, SalesInvoice, SalesInvoiceItem, Prisma } from '@prisma/client';
+import {
+  SalesInvoiceStatus,
+  SalesInvoice,
+  InvoiceStatus,
+  SalesInvoiceItem,
+  Prisma
+} from '@prisma/client';
+
 
 type InvoiceWithItems = SalesInvoice & {
   items: SalesInvoiceItem[];
@@ -22,7 +29,7 @@ export class StockCronService {
     try {
       const abandonedInvoices = (await this.prisma.salesInvoice.findMany({
         where: {
-          status: InvoiceStatus.PENDING,
+          status: SalesInvoiceStatus.pending,
           updatedAt: {
             lt: thirtyMinutesAgo,
           },
@@ -60,7 +67,7 @@ export class StockCronService {
             }
             await tx.salesInvoice.update({
               where: { id: invoice.id },
-              data: { status: InvoiceStatus.CANCELLED },
+              data: { status: SalesInvoiceStatus.cancelled },
             });
 
             this.logger.log(

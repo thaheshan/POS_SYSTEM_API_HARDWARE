@@ -52,5 +52,31 @@ pids
 *.seed
 *.pid.lock
 
+# ========== DEVELOPMENT ARTIFACTS (Never commit) ==========
+
+# Seed scripts (keep code organization clean)
+seed.js
+seed.ts
+seed*.js
+seed*.ts
+test*.js
+test*.ts
+!/prisma/seed.ts        # Exception: allow one shared seed
+!prisma/seeds/          # Allow seed folder only if TypeScript
+
+# Generated test artifacts (binary bloat)
+*.pdf
+*.xlsx
+*.csv
+*.generated.*
+test-*.pdf
+quotation-test.*
+report-test.*
+
+# Test output files
+*.test-output
+test-output/
+
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json

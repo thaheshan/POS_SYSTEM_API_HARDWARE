@@ -7,7 +7,7 @@ export interface AuthUser {
   tenant_id: string;
   first_name?: string | null;
   last_name?: string | null;
-  totp_secret?: string;
+  twoFactorSecret?: string;
   phone_number?: string;
   two_factor_enabled: boolean;
 }

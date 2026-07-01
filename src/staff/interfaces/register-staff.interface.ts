@@ -1,3 +1,5 @@
+import { UserRole } from '@prisma/client';
+
 export interface IRegisterStaffRequest {
   full_name: string;
   email: string;

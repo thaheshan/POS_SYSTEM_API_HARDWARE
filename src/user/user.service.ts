@@ -56,7 +56,7 @@ export class UserService {
   async incrementFailedLoginAttempts(email: string): Promise<void> {
     await this.prisma.db.user.update({
       where: { email },
-      data: { failed_login_attempts: { increment: 1 } },
+      data: { failedLoginAttempts: { increment: 1 } },
     });
   }
 
@@ -64,17 +64,10 @@ export class UserService {
     await this.prisma.db.user.update({
       where: { email },
       data: {
-        failed_login_attempts: 0,
-        account_locked_until: null,
-        last_login: new Date(),
+        failedLoginAttempts: 0,
+        accountLockedUntil: null,
+        lastLogin: new Date(),
       },
-    });
-  }
-
-  async updateUser(userId: string, data: Partial<any>): Promise<void> {
-    await this.prisma.db.user.update({
-      where: { user_id: userId },
-      data,
     });
   }
 }
