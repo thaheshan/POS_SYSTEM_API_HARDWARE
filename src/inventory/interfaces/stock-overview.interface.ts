@@ -16,4 +16,6 @@ export interface StockOverviewResponse {
   minimum_stock_level?: number;
   low_stock: boolean;
   out_of_stock: boolean;
+  sellType?: string;
+  measurementUnit?: string | null;
 }
