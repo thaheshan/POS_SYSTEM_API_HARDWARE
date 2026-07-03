@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ShopController } from './shop.controller';
 import { ShopsService } from './shops.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import type { AuthRequest } from '../common/interfaces/auth-request.interface';
+import { UpdateShopProfileDto } from './dto/update-shop-profile.dto';
 
 describe('ShopController', () => {
   let controller: ShopController;
@@ -10,6 +11,7 @@ describe('ShopController', () => {
 
   const mockShopsService = {
     getShopProfile: jest.fn(),
+    updateShopProfile: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -82,4 +84,63 @@ describe('ShopController', () => {
       await expect(controller.getProfile(mockReq)).rejects.toThrow(NotFoundException);
     });
   });
+
+  describe('updateProfile', () => {
+    it('should successfully update and return status', async () => {
+      const mockReq = {
+        user: {
+          tenant_id: 'shop_001',
+          sub: 'user_001',
+        },
+      } as unknown as AuthRequest;
+
+      const mockDto: UpdateShopProfileDto = {
+        name: 'Updated Shop Name',
+        business_registration_no: 'BR-999',
+        phone: '+94771234567',
+        email: 'new@shop.com',
+      };
+
+      const mockResponse = {
+        message: 'Shop profile updated successfully',
+        shop_id: 'shop_001',
+        updated_at: '2026-06-08T10:30:00Z',
+      };
+
+      mockShopsService.updateShopProfile.mockResolvedValue(mockResponse);
+
+      const result = await controller.updateProfile(mockReq, mockDto);
+      expect(result).toEqual(mockResponse);
+      expect(service.updateShopProfile).toHaveBeenCalledWith('shop_001', 'user_001', mockDto);
+    });
+
+    it('should throw BadRequestException if tenant_id or sub is missing', async () => {
+      const mockReq = {
+        user: {},
+      } as unknown as AuthRequest;
+
+      const mockDto: UpdateShopProfileDto = { name: 'Test' };
+
+      await expect(controller.updateProfile(mockReq, mockDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should bubble up ConflictException from service', async () => {
+      const mockReq = {
+        user: {
+          tenant_id: 'shop_001',
+          sub: 'user_001',
+        },
+      } as unknown as AuthRequest;
+
+      const mockDto: UpdateShopProfileDto = {
+        name: 'Duplicate Shop',
+        business_registration_no: 'BR-EXISTS',
+      };
+
+      mockShopsService.updateShopProfile.mockRejectedValue(new ConflictException('Business registration number already exists'));
+
+      await expect(controller.updateProfile(mockReq, mockDto)).rejects.toThrow(ConflictException);
+    });
+  });
 });
+
