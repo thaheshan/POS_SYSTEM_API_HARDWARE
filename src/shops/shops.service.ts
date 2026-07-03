@@ -32,7 +32,7 @@ export class ShopsService {
     );
   }
 
-  async uploadLogo(shopId: string, file: any) {
+  async uploadLogo(shopId: string, file: any, userId?: string) {
     const shop = await this.prisma.shop.findUnique({ where: { id: shopId } });
     if (!shop) {
       throw new NotFoundException('Shop not found');
@@ -69,6 +69,15 @@ export class ShopsService {
         data: { logo_url: logoUrl },
         select: { id: true, logo_url: true, name: true }
       });
+
+      if (userId) {
+        await this.activityLogsService.log(
+          shopId,
+          userId,
+          'UPLOAD_LOGO',
+          'Uploaded new shop logo'
+        );
+      }
 
       return updatedShop;
     } catch (err) {

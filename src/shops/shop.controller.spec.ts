@@ -12,6 +12,7 @@ describe('ShopController', () => {
   const mockShopsService = {
     getShopProfile: jest.fn(),
     updateShopProfile: jest.fn(),
+    uploadLogo: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -142,5 +143,60 @@ describe('ShopController', () => {
       await expect(controller.updateProfile(mockReq, mockDto)).rejects.toThrow(ConflictException);
     });
   });
+
+  describe('uploadLogo', () => {
+    it('should successfully upload logo and return formatted response', async () => {
+      const mockReq = {
+        user: {
+          tenant_id: 'shop_001',
+          sub: 'user_001',
+        },
+      } as unknown as AuthRequest;
+
+      const mockFile = {
+        originalname: 'logo.png',
+        buffer: Buffer.from('test'),
+        mimetype: 'image/png',
+      };
+
+      const mockServiceResult = {
+        id: 'shop_001',
+        logo_url: 'https://cdn.shop.lk/logo.png',
+        name: 'ABC Hardware Store',
+      };
+
+      mockShopsService.uploadLogo.mockResolvedValue(mockServiceResult);
+
+      const result = await controller.uploadLogo(mockReq, mockFile);
+      expect(result).toEqual({ logo_url: 'https://cdn.shop.lk/logo.png' });
+      expect(service.uploadLogo).toHaveBeenCalledWith('shop_001', mockFile, 'user_001');
+    });
+
+    it('should throw BadRequestException if no file is uploaded', async () => {
+      const mockReq = {
+        user: {
+          tenant_id: 'shop_001',
+          sub: 'user_001',
+        },
+      } as unknown as AuthRequest;
+
+      await expect(controller.uploadLogo(mockReq, undefined)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if tenant_id or sub is missing', async () => {
+      const mockReq = {
+        user: {},
+      } as unknown as AuthRequest;
+
+      const mockFile = {
+        originalname: 'logo.png',
+        buffer: Buffer.from('test'),
+        mimetype: 'image/png',
+      };
+
+      await expect(controller.uploadLogo(mockReq, mockFile)).rejects.toThrow(BadRequestException);
+    });
+  });
 });
+
 
