@@ -19,6 +19,8 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { RolesModule } from './roles/roles.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { ShopsModule } from './shops/shops.module';
+import { ContactModule } from './contact/contact.module';
+import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { ShopsModule } from './shops/shops.module';
     RolesModule,
     ExpensesModule,
     ShopsModule,
+    ContactModule,
+    ActivityLogsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

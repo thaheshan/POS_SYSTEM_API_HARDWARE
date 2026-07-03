@@ -90,6 +90,12 @@ enum SubscriptionStatus {
   SUSPENDED
 }
 
+enum ContactStatus {
+  NEW
+  READ
+  REPLIED
+}
+
 // ================= CORE / TENANT MODELS =================
 model User {
   user_id       String  @id @default(uuid())
@@ -129,6 +135,7 @@ model User {
   notifications     Notification[]      @relation("UserNotifications")
   role              Role?               @relation(fields: [role_id], references: [id])
   expenses          Expense[]
+  activityLogs      ActivityLog[]
 
   @@map("users")
 }
@@ -174,6 +181,7 @@ model Shop {
   roles              Role[]
   expenses           Expense[]
   subscriptionPayments SubscriptionPayment[]
+  activityLogs       ActivityLog[]
 
   @@map("shops")
 }
@@ -303,6 +311,8 @@ model Product {
   reorderQuantity     Decimal?     @map("reorder_quantity") @db.Decimal(10, 2)
   warrantyMonths      Int?         @map("warranty_months")
   hasVariants         Boolean      @default(false) @map("has_variants")
+  sellType            String       @default("FIX") @map("sell_type")
+  measurementUnit     String?      @map("measurement_unit")
   isActive            Boolean      @default(true) @map("is_active")
   createdBy           String?      @map("created_by")
   createdAt           DateTime     @default(now()) @map("created_at")
@@ -770,4 +780,38 @@ model Expense {
 
   @@index([tenantId, createdAt])
   @@map("expenses")
+}
+
+// ================= CONTACT MESSAGES =================
+model ContactMessage {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String        @db.VarChar(100)
+  email     String        @db.VarChar(200)
+  phone     String?       @db.VarChar(50)
+  company   String?       @db.VarChar(200)
+  message   String        @db.Text
+  status    ContactStatus @default(NEW)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@map("contact_messages")
+}
+
+// ================= AUDIT LOGS =================
+model ActivityLog {
+  id         String   @id @default(uuid()) @map("activity_log_id") @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id")
+  userName   String   @map("user_name") @db.VarChar(150)
+  userRole   String   @map("user_role") @db.VarChar(50)
+  action     String   @db.VarChar(100)
+  details    String   @db.Text
+  amount     Float?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  shop Shop @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [user_id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("activity_logs")
 }

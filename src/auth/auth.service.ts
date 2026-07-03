@@ -351,6 +351,27 @@ export class AuthService {
     this.resetAttemptMap.delete(email);
     this.resetRequestMap.delete(email);
 
+    return { message: 'Password reset successfully' };
+  }
+
+  async resetPasswordExternal(email: string, new_password: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+
+    await this.prisma.user.update({
+      where: { email },
+      data: {
+        password_hash: hashedPassword,
+        password_reset_token: null,
+        password_reset_expiry: null,
+        password_reset_used: true,
+      },
+    });
+
     return { message: 'Password updated successfully' };
   }
 

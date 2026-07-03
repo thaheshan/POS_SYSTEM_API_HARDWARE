@@ -2,11 +2,16 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCheckoutDto } from './dto/create-checkout.dto';
 
+import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+
 @Injectable()
 export class SalesService {
   private readonly logger = new Logger(SalesService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly activityLogsService: ActivityLogsService,
+  ) {}
 
   async getSales(tenantId: string, query: any) {
     const limit = Number(query.limit) || 1000;
@@ -149,7 +154,10 @@ export class SalesService {
           const qty = Number(it.quantity ?? 1);
           const lineTotal = unitPrice * qty;
           const taxRate = Number(product.taxRate ?? 0);
-          const taxAmount = lineTotal * (taxRate / 100);
+          
+          // Tax Inclusive Calculation: Extract tax from the sticker price
+          const basePrice = lineTotal / (1 + (taxRate / 100));
+          const taxAmount = lineTotal - basePrice;
 
           newSubtotal += lineTotal;
           newTax += taxAmount;
@@ -188,7 +196,8 @@ export class SalesService {
 
       // 3. Update the main invoice record
       const discount = data.discount !== undefined ? Number(data.discount) : Number(invoice.discountAmount);
-      const totalAmount = newSubtotal - discount + newTax;
+      // Total amount is simply Subtotal minus discount. Tax is already included inside the Subtotal.
+      const totalAmount = newSubtotal - discount;
 
       await tx.salesInvoice.update({
         where: { id: invoice.id },
@@ -314,13 +323,17 @@ export class SalesService {
           const costPriceTotal = purchasePrice * item.quantity;
           const profit = lineTotal - costPriceTotal;
 
+          const taxRate = Number(product.taxRate ?? 0);
+          const basePrice = lineTotal / (1 + (taxRate / 100));
+          const taxAmount = lineTotal - basePrice;
+
           lineItems.push({
             productId: item.productId,
             quantity: item.quantity,
             unitPrice,
             lineTotal,
-            taxRate: product.taxRate ?? 0,
-            taxAmount: lineTotal * (Number(product.taxRate ?? 0) / 100),
+            taxRate,
+            taxAmount,
             warehouseId: stockRecord.warehouseId,
             costPrice: purchasePrice,
             profit: profit,
@@ -342,7 +355,9 @@ export class SalesService {
         const discount = dto.discount ?? 0;
         const afterDiscount = subtotal - discount;
         const taxAmount = lineItems.reduce((sum, li) => sum + Number(li.taxAmount), 0);
-        const totalAmount = afterDiscount + taxAmount;
+        
+        // Total amount is simply Subtotal minus discount. Tax is already included inside the Subtotal.
+        const totalAmount = afterDiscount;
 
         // --- 3. Create Sales Invoice ---
         const timestamp = Date.now().toString(); // Use full timestamp
@@ -426,6 +441,15 @@ export class SalesService {
     }).catch((err) => {
       this.logger.warn('Failed to create sale notification: ' + err.message);
     });
+
+    // Write Activity Log
+    await this.activityLogsService.log(
+      tenantId,
+      userId,
+      'CREATE_SALE',
+      `Processed checkout for Invoice ${transactionResult.invoiceNumber}. Total: Rs. ${transactionResult.totalAmount}`,
+      transactionResult.totalAmount,
+    ).catch(() => {});
 
     return transactionResult;
   }
