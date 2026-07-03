@@ -15,7 +15,7 @@ import {
 } from './dto/advanced-sales.dto';
 
 interface AuthenticatedRequest {
-  user: { tenant_id: string; sub: string };
+  user: { tenant_id: string; user_id: string };
 }
 
 @ApiTags('Sales')
@@ -67,7 +67,7 @@ export class SalesController {
   @ApiResponse({ status: 201, description: 'Invoice created and stock deducted' })
   @ApiResponse({ status: 400, description: 'Insufficient stock or product not found' })
   async checkout(@Body() dto: CreateCheckoutDto, @Req() req: AuthenticatedRequest) {
-    return this.salesService.checkout(dto, req.user.tenant_id, req.user.sub);
+    return this.salesService.checkout(dto, req.user.tenant_id, req.user.user_id);
   }
 
   // ─── Advanced POS Endpoints ─────────────────────────────────────────────────
@@ -76,31 +76,31 @@ export class SalesController {
   @ApiOperation({ summary: 'Process a sales return — restores stock and records refund' })
   @ApiResponse({ status: 201, description: 'Return processed and stock restored' })
   async processReturn(@Body() dto: CreateReturnDto, @Req() req: AuthenticatedRequest) {
-    return this.advancedSalesService.processReturn(dto, req.user.tenant_id, req.user.sub);
+    return this.advancedSalesService.processReturn(dto, req.user.tenant_id, req.user.user_id);
   }
 
   @Post('quotation')
   @ApiOperation({ summary: 'Create a price quotation for a customer' })
   async createQuotation(@Body() dto: CreateQuotationDto, @Req() req: AuthenticatedRequest) {
-    return this.advancedSalesService.createQuotation(dto, req.user.tenant_id, req.user.sub);
+    return this.advancedSalesService.createQuotation(dto, req.user.tenant_id, req.user.user_id);
   }
 
   @Post('credit')
   @ApiOperation({ summary: 'Record a credit sale against a customer account' })
   async processCreditSale(@Body() dto: CreateCreditSaleDto, @Req() req: AuthenticatedRequest) {
-    return this.advancedSalesService.processCreditSale(dto, req.user.tenant_id, req.user.sub);
+    return this.advancedSalesService.processCreditSale(dto, req.user.tenant_id, req.user.user_id);
   }
 
   @Post('bulk')
   @ApiOperation({ summary: 'Record a bulk/wholesale sale with discounts' })
   async processBulkSale(@Body() dto: CreateBulkSaleDto, @Req() req: AuthenticatedRequest) {
-    return this.advancedSalesService.processBulkSale(dto, req.user.tenant_id, req.user.sub);
+    return this.advancedSalesService.processBulkSale(dto, req.user.tenant_id, req.user.user_id);
   }
 
   @Post('hold')
   @ApiOperation({ summary: 'Hold a sale cart to resume later' })
   async holdSale(@Body() dto: CreateHoldSaleDto, @Req() req: AuthenticatedRequest) {
-    return this.advancedSalesService.holdSale(dto, req.user.tenant_id, req.user.sub);
+    return this.advancedSalesService.holdSale(dto, req.user.tenant_id, req.user.user_id);
   }
 
   @Get('hold/list')
@@ -112,13 +112,13 @@ export class SalesController {
   @Post('exchange')
   @ApiOperation({ summary: 'Process an item exchange against an original invoice' })
   async processExchange(@Body() dto: CreateExchangeDto, @Req() req: AuthenticatedRequest) {
-    return this.advancedSalesService.processExchange(dto, req.user.tenant_id, req.user.sub);
+    return this.advancedSalesService.processExchange(dto, req.user.tenant_id, req.user.user_id);
   }
 
   @Post('layaway')
   @ApiOperation({ summary: 'Create a layaway/backorder agreement with a deposit' })
   async createLayaway(@Body() dto: CreateLayawayDto, @Req() req: AuthenticatedRequest) {
-    return this.advancedSalesService.createLayaway(dto, req.user.tenant_id, req.user.sub);
+    return this.advancedSalesService.createLayaway(dto, req.user.tenant_id, req.user.user_id);
   }
 }
 

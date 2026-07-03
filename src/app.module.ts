@@ -20,6 +20,7 @@ import { RolesModule } from './roles/roles.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { ShopsModule } from './shops/shops.module';
 import { ContactModule } from './contact/contact.module';
+import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { ContactModule } from './contact/contact.module';
     ExpensesModule,
     ShopsModule,
     ContactModule,
+    ActivityLogsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

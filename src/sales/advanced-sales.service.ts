@@ -10,11 +10,16 @@ import {
   CreateLayawayDto,
 } from './dto/advanced-sales.dto';
 
+import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+
 @Injectable()
 export class AdvancedSalesService {
   private readonly logger = new Logger(AdvancedSalesService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly activityLogsService: ActivityLogsService,
+  ) {}
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
   private isUuid(id: string) {
@@ -47,7 +52,8 @@ export class AdvancedSalesService {
       ? dto.refundMethod.toUpperCase()
       : 'CASH') as any;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const retNumber = this.makeNumber('RET');
       // 1. Build return items, validate quantities, and restore stock
       const returnItems: any[] = [];
       let totalRefund = 0;
@@ -144,42 +150,49 @@ export class AdvancedSalesService {
         });
       }
 
-      // Mutate original invoice totals - REMOVED. 
-      // We do NOT mutate the original invoice totals because the new RET- invoice 
-      // handles the financial deduction. Mutating both would double-deduct revenue.
+      // Check if original invoice is now fully returned (sum of item quantities is 0)
+      const updatedItems = await tx.salesInvoiceItem.findMany({
+        where: { invoiceId: invoice.id },
+      });
+      const remainingQty = updatedItems.reduce((sum, item) => sum + Number(item.quantity), 0);
 
-      // 2. Create the SalesReturn record
-      const retNumber = this.makeNumber('RET');
+      if (remainingQty <= 0) {
+        await tx.salesInvoice.update({
+          where: { id: invoice.id },
+          data: { status: 'RETURNED' },
+        });
+      }
 
+      // 3. Create the SalesReturn record
       const salesReturn = await tx.salesReturn.create({
         data: {
-          retNumber,
           tenantId,
+          retNumber,
           branchId: invoice.branchId,
           invoiceId: invoice.id,
           customerId: invoice.customerId ?? undefined,
-          status: 'COMPLETED',
-          totalAmount: dto.refundAmount || totalRefund,
+          totalAmount: totalRefund,
           refundMethod,
           reason: dto.reason,
           createdBy: userId,
           items: {
-            create: returnItems.map(item => ({
-              invoiceItemId: item.invoiceItemId,
-              productId: item.productId,
-              warehouseId: item.warehouseId,
-              quantity: item.quantity,
-              condition: item.condition,
-              unitPrice: item.unitPrice,
-              lineTotal: item.lineTotal,
-            })),
+            createMany: {
+              data: returnItems.map(item => ({
+                invoiceItemId: item.invoiceItemId,
+                productId: item.productId,
+                warehouseId: item.warehouseId,
+                quantity: item.quantity,
+                condition: item.condition,
+                unitPrice: item.unitPrice,
+                lineTotal: item.lineTotal,
+              })),
+            }
           },
         },
         include: { items: true },
       });
 
-      // 3. Create a Return Invoice (negative) so the return appears in the invoice list
-      //    The original invoice is ALREADY mutated above to prevent duplicate returns.
+      // 4. Create a Return Invoice (negative) so the return appears in the invoice list
       await tx.salesInvoice.create({
         data: {
           tenantId,
@@ -202,8 +215,8 @@ export class AdvancedSalesService {
         },
       });
 
-      // 4. Create a notification
-      this.prisma.notification.create({
+      // 5. Create a notification
+      await tx.notification.create({
         data: {
           tenantId,
           userId,
@@ -212,7 +225,7 @@ export class AdvancedSalesService {
           type: 'WARNING',
           link: '/pos/return',
         },
-      }).catch(() => {});
+      });
 
       return {
         success: true,
@@ -222,6 +235,16 @@ export class AdvancedSalesService {
         message: 'Return processed and stock restored successfully.',
       };
     });
+
+    await this.activityLogsService.log(
+      tenantId,
+      userId,
+      'RETURN_SALE',
+      `Processed return ${result.returnNumber} for Invoice ${invoice.invoiceNumber}. Reason: ${dto.reason}`,
+      result.totalRefund,
+    );
+
+    return result;
   }
 
   // ─── INVOICE LOOKUP (for return/exchange) ───────────────────────────────────
@@ -508,7 +531,7 @@ export class AdvancedSalesService {
     const exchangeNumber = this.makeNumber('EXC');
     const retNumber = this.makeNumber('RET');
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Handle Returned Items
       const returnedItemsWithCost: any[] = [];
       let totalRefund = 0;
@@ -750,6 +773,16 @@ export class AdvancedSalesService {
           : `Exchange complete. Refund Rs. ${Math.abs(dto.delta)} due to customer.`,
       };
     });
+
+    await this.activityLogsService.log(
+      tenantId,
+      userId,
+      'EXCHANGE_SALE',
+      `Processed exchange ${result.exchangeNumber} for Invoice ${invoice.invoiceNumber}. New items: Rs. ${dto.newAmount}, Returned items: Rs. ${dto.returnAmount}`,
+      dto.delta,
+    );
+
+    return result;
   }
 
   // ─── LAYAWAY ─────────────────────────────────────────────────────────────────

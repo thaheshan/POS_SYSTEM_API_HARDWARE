@@ -2,11 +2,16 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCheckoutDto } from './dto/create-checkout.dto';
 
+import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+
 @Injectable()
 export class SalesService {
   private readonly logger = new Logger(SalesService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly activityLogsService: ActivityLogsService,
+  ) {}
 
   async getSales(tenantId: string, query: any) {
     const limit = Number(query.limit) || 1000;
@@ -436,6 +441,15 @@ export class SalesService {
     }).catch((err) => {
       this.logger.warn('Failed to create sale notification: ' + err.message);
     });
+
+    // Write Activity Log
+    await this.activityLogsService.log(
+      tenantId,
+      userId,
+      'CREATE_SALE',
+      `Processed checkout for Invoice ${transactionResult.invoiceNumber}. Total: Rs. ${transactionResult.totalAmount}`,
+      transactionResult.totalAmount,
+    ).catch(() => {});
 
     return transactionResult;
   }
