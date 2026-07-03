@@ -13,6 +13,7 @@ describe('ShopController', () => {
     getShopProfile: jest.fn(),
     updateShopProfile: jest.fn(),
     uploadLogo: jest.fn(),
+    removeLogo: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -195,6 +196,50 @@ describe('ShopController', () => {
       };
 
       await expect(controller.uploadLogo(mockReq, mockFile)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('removeLogo', () => {
+    it('should successfully remove the logo and return response', async () => {
+      const mockReq = {
+        user: {
+          tenant_id: 'shop_001',
+          sub: 'user_001',
+        },
+      } as unknown as AuthRequest;
+
+      const mockResponse = {
+        message: 'Shop logo removed successfully',
+        logo_url: null,
+      };
+
+      mockShopsService.removeLogo.mockResolvedValue(mockResponse);
+
+      const result = await controller.removeLogo(mockReq);
+      expect(result).toEqual(mockResponse);
+      expect(result.logo_url).toBeNull();
+      expect(service.removeLogo).toHaveBeenCalledWith('shop_001', 'user_001');
+    });
+
+    it('should throw BadRequestException if tenant_id or sub is missing', async () => {
+      const mockReq = {
+        user: {},
+      } as unknown as AuthRequest;
+
+      await expect(controller.removeLogo(mockReq)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should bubble up NotFoundException if no logo exists', async () => {
+      const mockReq = {
+        user: {
+          tenant_id: 'shop_001',
+          sub: 'user_001',
+        },
+      } as unknown as AuthRequest;
+
+      mockShopsService.removeLogo.mockRejectedValue(new NotFoundException('No shop logo found'));
+
+      await expect(controller.removeLogo(mockReq)).rejects.toThrow(NotFoundException);
     });
   });
 });

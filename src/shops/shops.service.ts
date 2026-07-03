@@ -207,6 +207,60 @@ export class ShopsService {
       throw new InternalServerErrorException('Failed to update shop profile');
     }
   }
+
+  async removeLogo(shopId: string, userId: string) {
+    this.logger.log(`Removing logo for shopId: ${shopId} by userId: ${userId}`);
+
+    const shop = await this.prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { id: true, logo_url: true },
+    });
+
+    if (!shop) {
+      throw new NotFoundException('Shop profile not found');
+    }
+
+    if (!shop.logo_url) {
+      throw new NotFoundException('No shop logo found');
+    }
+
+    try {
+      const logoUrl = shop.logo_url;
+      const parts = logoUrl.split('shop-logos/');
+      if (parts.length > 1) {
+        const filePath = parts[1];
+        const { error } = await this.storage.from('shop-logos').remove([filePath]);
+        if (error) {
+          this.logger.warn(`Failed to delete logo file from Supabase storage: ${filePath}`, error);
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.shop.update({
+          where: { id: shopId },
+          data: { logo_url: null },
+        });
+
+        await this.activityLogsService.log(
+          shopId,
+          userId,
+          'REMOVE_LOGO',
+          'Removed shop logo'
+        );
+      });
+
+      return {
+        message: 'Shop logo removed successfully',
+        logo_url: null,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Failed to remove shop logo for shopId: ${shopId}`, error);
+      throw new InternalServerErrorException('Failed to remove shop logo');
+    }
+  }
 }
 
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Body, UseGuards, Req, BadRequestException, UsePipes, ValidationPipe, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Put, Post, Delete, Body, UseGuards, Req, BadRequestException, UsePipes, ValidationPipe, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { ShopsService } from './shops.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -98,6 +98,23 @@ export class ShopController {
     return {
       logo_url: result.logo_url,
     };
+  }
+
+  @Delete('logo')
+  @Roles('OWNER', 'ADMIN')
+  @ApiOperation({ summary: 'Remove the current shop logo' })
+  @ApiResponse({ status: 200, description: 'Shop logo removed successfully' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions to remove shop logo' })
+  @ApiResponse({ status: 404, description: 'No shop logo found' })
+  @ApiResponse({ status: 500, description: 'Failed to remove shop logo' })
+  async removeLogo(@Req() req: AuthRequest) {
+    const tenantId = req.user?.tenant_id;
+    const userId = req.user?.sub;
+    if (!tenantId || !userId) {
+      throw new BadRequestException('User is not associated with any shop');
+    }
+    return this.shopsService.removeLogo(tenantId, userId);
   }
 }
 
