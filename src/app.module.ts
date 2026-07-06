@@ -21,6 +21,7 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { ShopsModule } from './shops/shops.module';
 import { ContactModule } from './contact/contact.module';
 import { ActivityLogsModule } from './activity-logs/activity-logs.module';
+import { SmsModule } from './sms/sms.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { ActivityLogsModule } from './activity-logs/activity-logs.module';
     ShopsModule,
     ContactModule,
     ActivityLogsModule,
+    SmsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

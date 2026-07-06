@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateCheckoutDto } from './dto/create-checkout.dto';
 
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { SmsService } from '../sms/sms.service';
 
 @Injectable()
 export class SalesService {
@@ -11,6 +12,7 @@ export class SalesService {
   constructor(
     private prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
+    private readonly smsService: SmsService,
   ) {}
 
   async getSales(tenantId: string, query: any) {
@@ -448,8 +450,26 @@ export class SalesService {
       userId,
       'CREATE_SALE',
       `Processed checkout for Invoice ${transactionResult.invoiceNumber}. Total: Rs. ${transactionResult.totalAmount}`,
-      transactionResult.totalAmount,
-    ).catch(() => {});
+    );
+
+    // Send SMS Receipt (fire-and-forget — never blocks checkout)
+    require('fs').appendFileSync('sms-debug.txt', `\n[CHECKOUT END] dto.customerId: ${dto.customerId}\n`);
+    if (dto.customerId) {
+      this.logger.log(`[SMS] Customer ID found (${dto.customerId}) — fetching phone for receipt SMS`);
+      this.prisma.customer.findUnique({ where: { id: dto.customerId } })
+        .then(customer => {
+          require('fs').appendFileSync('sms-debug.txt', `[DB FETCH] Customer found: ${!!customer}, Phone: ${customer?.phone}\n`);
+          if (customer?.phone) {
+            this.logger.log(`[SMS] Phone found: ${customer.phone} — dispatching SMS`);
+            this.smsService.sendReceiptSMS(customer.phone, transactionResult.invoiceId);
+          } else {
+            this.logger.warn(`[SMS] Customer ${dto.customerId} has no phone number — skipping SMS`);
+          }
+        })
+        .catch(err => this.logger.error('[SMS] Failed to fetch customer for SMS', err));
+    } else {
+      this.logger.log('[SMS] No customerId in payload — skipping SMS');
+    }
 
     return transactionResult;
   }
