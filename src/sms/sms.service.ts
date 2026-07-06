@@ -9,7 +9,7 @@ export class SmsService {
   private readonly API_TOKEN  = '5712|3BWcH4C9bFA69kplnjXmXlauJmxG1HIsPuXef5RF1eafd116';
   private readonly SENDER_ID  = 'TextLKDemo';
   private readonly SHOP_NAME  = 'Futura Hardware';
-  private readonly RECEIPT_BASE_URL = process.env.FRONTEND_RECEIPT_URL || 'https://pos-system-web-hardware-gdxu.vercel.app';
+  private readonly RECEIPT_BASE_URL = process.env.FRONTEND_RECEIPT_URL || 'https://www.futurahardware.com';
 
   /**
    * Normalise a Sri Lankan phone number to 947XXXXXXXX format.
