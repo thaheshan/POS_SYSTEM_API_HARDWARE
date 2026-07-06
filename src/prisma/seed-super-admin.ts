@@ -3,6 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
+import * as crypto from 'crypto';
 dotenv.config();
 
 const pool = new Pool({
@@ -15,8 +16,12 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
-  const email = 'admin@futurasolutions.com';
-  const password = 'SuperAdminPassword123!@';
+  const email = process.env.SEED_ADMIN_EMAIL || 'admin@futurasolutions.com';
+  let password = process.env.SEED_ADMIN_PASSWORD;
+  if (!password) {
+    password = crypto.randomBytes(12).toString('hex') + 'A1!';
+    console.log(`[SEED] SEED_ADMIN_PASSWORD not set. Generated random password: ${password}`);
+  }
 
   const existingAdmin = await prisma.user.findUnique({
     where: { email }

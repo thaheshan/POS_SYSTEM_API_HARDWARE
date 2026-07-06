@@ -127,4 +127,27 @@ export class AnalyticsController {
 
     return reorderList;
   }
+
+  @Get('revenue-trend')
+  async getRevenueTrend(
+    @CurrentTenant() tenantId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    this.logger.log(
+      `HTTP GET /reports/revenue-trend requested for tenant: ${tenantId}, range: ${startDate} to ${endDate}`,
+    );
+    return this.analyticsService.getRevenueTrend(tenantId, startDate, endDate);
+  }
+
+  @Get('revenue-comparison')
+  async getRevenueComparison(
+    @CurrentTenant() tenantId: string,
+    @Query('period') period?: string,
+  ) {
+    this.logger.log(
+      `HTTP GET /reports/revenue-comparison requested for tenant: ${tenantId}`,
+    );
+    return this.analyticsService.getRevenueComparison(tenantId, period);
+  }
 }

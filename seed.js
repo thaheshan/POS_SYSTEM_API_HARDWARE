@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import pg from 'pg';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 dotenv.config();
 const { Pool } = pg;
@@ -14,11 +15,18 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-const hash = await bcrypt.hash('SecurePass@2026', 10);
+const email = process.env.SEED_USER_EMAIL || 'john@abchardware.lk';
+let password = process.env.SEED_USER_PASSWORD;
+if (!password) {
+  password = crypto.randomBytes(12).toString('hex') + 'A1!';
+  console.log(`[SEED] SEED_USER_PASSWORD not set. Generated random password: ${password}`);
+}
+
+const hash = await bcrypt.hash(password, 10);
 await pool.query(
   `INSERT INTO users (user_id, tenant_id, email, password_hash, first_name, last_name, role, is_active, is_verified, updated_at)
-   VALUES (gen_random_uuid(), gen_random_uuid(), 'john@abchardware.lk', $1, 'John', 'Silva', 'owner', true, true, now())`,
-  [hash],
+   VALUES (gen_random_uuid(), gen_random_uuid(), $2, $1, 'John', 'Silva', 'owner', true, true, now())`,
+  [hash, email],
 );
-console.log('User created!');
+console.log(`User created for ${email}!`);
 await pool.end();

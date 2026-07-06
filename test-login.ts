@@ -1,11 +1,15 @@
 import axios from 'axios';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 async function testLogin() {
   console.log('Testing login API directly...');
+  const email = process.env.SEED_ADMIN_EMAIL || 'admin@futurasolutions.com';
+  const password = process.env.SEED_ADMIN_PASSWORD || 'Futura@Admin123';
   try {
     const res = await axios.post('http://localhost:8000/api/v1/auth/login', {
-      email: 'admin@futurasolutions.com',
-      password: 'Futura@Admin123',
+      email,
+      password,
     });
     console.log('✅ Login successful!');
     console.log(JSON.stringify(res.data, null, 2));
