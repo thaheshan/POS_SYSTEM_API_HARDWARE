@@ -61,3 +61,8 @@ C:\Users\Thahe\Documents\GitHub\POS_SYSTEM_API_HARDWARE\src\activity-logs\activi
 Argument `where` of type UserWhereUniqueInput needs at least one of `user_id` or `email` arguments. Available options are marked with ?.
 SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
 SUCCESS: Logged ADD_EXPENSE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
