@@ -14,8 +14,6 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
 
         redis.on('error', (err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
-          // Keep process alive while making connectivity issues visible.
-          // Feature-gated routes will fail with controlled responses.
           console.error('Redis connection error:', message);
         });
 
