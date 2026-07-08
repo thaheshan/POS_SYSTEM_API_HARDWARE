@@ -159,6 +159,13 @@ model Shop {
   nextPaymentDue       DateTime?                   @map("next_payment_due")
   selfReportedPaid     Boolean                     @default(false) @map("self_reported_paid")
 
+  // Tax configuration fields
+  vatRate              Decimal?                    @default(0) @map("vat_rate") @db.Decimal(5, 2)
+  tinNumber            String?                     @map("tin_number") @db.VarChar(50)
+  vatNumber            String?                     @map("vat_number") @db.VarChar(50)
+  isIrdCompliant       Boolean                     @default(false) @map("is_ird_compliant")
+  taxUpdatedAt         DateTime?                   @map("tax_updated_at")
+
   users              User[]
   branches           Branch[]
   warehouses         Warehouse[]
