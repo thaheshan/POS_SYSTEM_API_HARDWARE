@@ -22,6 +22,7 @@ import { ShopsModule } from './shops/shops.module';
 import { ContactModule } from './contact/contact.module';
 import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 import { TaxModule } from './tax/tax.module';
+import { SmsModule } from './sms/sms.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { TaxModule } from './tax/tax.module';
     ContactModule,
     ActivityLogsModule,
     TaxModule,
+    SmsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
