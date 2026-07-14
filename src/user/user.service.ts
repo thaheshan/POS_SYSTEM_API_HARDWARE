@@ -10,47 +10,40 @@ export class UserService {
   async findById(userId: string): Promise<AuthUser | null> {
     const user = await this.prisma.db.user.findUnique({
       where: { user_id: userId },
-      include: { role: true },
+      select: {
+        user_id: true,
+        email: true,
+        role: true,
+        status: true,
+        is_active: true,
+        is_verified: true,
+        tenant_id: true,
+      },
     });
 
-    if (!user) return null;
-    return {
-      user_id: user.user_id,
-      email: user.email,
-      role: user.role?.name ?? 'UNKNOWN',
-      is_active: user.is_active,
-      is_verified: user.is_verified,
-      tenant_id: user.tenant_id ?? '',
-      totp_secret: user.totp_secret ?? undefined,
-      phone_number: user.phone_number ?? undefined,
-      two_factor_enabled: user.two_factor_enabled,
-    } as AuthUser;
+    return user as AuthUser | null;
   }
 
   async findByEmailWithCredentials(email: string): Promise<UserRecord | null> {
     const user = await this.prisma.db.user.findUnique({
       where: { email },
-      include: { role: true },
+      select: {
+        user_id: true,
+        email: true,
+        password_hash: true,
+        first_name: true,
+        last_name: true,
+        role: true,
+        status: true,
+        is_active: true,
+        is_verified: true,
+        tenant_id: true,
+        failed_login_attempts: true,
+        account_locked_until: true,
+      },
     });
 
-    if (!user) return null;
-    return {
-      user_id: user.user_id,
-      email: user.email,
-      password_hash: user.password_hash,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      role: user.role?.name ?? 'UNKNOWN',
-      is_active: user.is_active,
-      is_verified: user.is_verified,
-      tenant_id: user.tenant_id ?? '',
-      failed_login_attempts: user.failed_login_attempts,
-      account_locked_until: user.account_locked_until,
-      totp_secret: user.totp_secret ?? undefined,
-      phone_number: user.phone_number ?? undefined,
-      two_factor_enabled: user.two_factor_enabled,
-      status: user.status,
-    } as UserRecord;
+    return user as UserRecord | null;
   }
 
   async incrementFailedLoginAttempts(email: string): Promise<void> {

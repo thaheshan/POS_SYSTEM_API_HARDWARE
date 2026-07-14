@@ -73,7 +73,12 @@ export class StaffController {
     @Req() req: AuthRequest,
   ) {
     const ownerId = req.user.sub;
-    return this.staffService.updateStaff(staffId, req.user.tenant_id, updateStaffDto, ownerId);
+    return this.staffService.updateStaff(
+      staffId,
+      req.user.tenant_id,
+      updateStaffDto,
+      ownerId,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

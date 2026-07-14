@@ -17,6 +17,9 @@ export class AppController {
   @Get('health/db')
   async checkDbHealth() {
     await this.prisma.$queryRaw`SELECT 1`;
-    return { status: 'ok', message: 'Supabase PostgreSQL Connected Successfully' };
+    return {
+      status: 'ok',
+      message: 'Supabase PostgreSQL Connected Successfully',
+    };
   }
 }

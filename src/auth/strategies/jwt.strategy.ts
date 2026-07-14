@@ -1,4 +1,3 @@
-import { Injectable, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -7,6 +6,7 @@ import { AuthUser } from '../interfaces/auth-user.interface';
 import { InactiveUserException } from '../exceptions/inactive-user.exception';
 import { UnverifiedUserException } from '../exceptions/unverified-user.exception';
 import { UserService } from '../../user/user.service';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -23,7 +23,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       secretOrKey: secret,
     });
     // Log first 5 chars of secret so we can verify it's loaded correctly
-    new Logger('JwtStrategy').log(`JWT_SECRET loaded, first 5 chars: "${secret.substring(0, 5)}"`);
+    new Logger('JwtStrategy').log(
+      `JWT_SECRET loaded, first 5 chars: "${secret.substring(0, 5)}"`,
+    );
   }
 
   async validate(payload: JwtPayload): Promise<AuthUser> {
@@ -33,12 +35,42 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new InactiveUserException();
     }
 
+    if (user.status === 'PENDING_APPROVAL') {
+      throw new ForbiddenException({
+        message: 'Account is pending approval.',
+        status: user.status,
+        userId: user.user_id,
+        is_active: user.is_active,
+        is_verified: user.is_verified,
+      });
+    }
+
+    if (user.status === 'REJECTED') {
+      throw new ForbiddenException({
+        message: 'Account was rejected.',
+        status: user.status,
+        userId: user.user_id,
+        is_active: user.is_active,
+        is_verified: user.is_verified,
+      });
+    }
+
     if (!user.is_active) {
-      throw new InactiveUserException();
+      throw new InactiveUserException({
+        status: user.status,
+        userId: user.user_id,
+        is_active: user.is_active,
+        is_verified: user.is_verified,
+      });
     }
 
     if (!user.is_verified) {
-      throw new UnverifiedUserException();
+      throw new UnverifiedUserException({
+        status: user.status,
+        userId: user.user_id,
+        is_active: user.is_active,
+        is_verified: user.is_verified,
+      });
     }
 
     return user;

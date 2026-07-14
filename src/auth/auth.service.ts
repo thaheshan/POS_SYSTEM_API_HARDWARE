@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
@@ -38,9 +39,13 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  async registerShopOwner(dto: import('./dto/register-shop-owner.dto').RegisterShopOwnerDto) {
+  async registerShopOwner(
+    dto: import('./dto/register-shop-owner.dto').RegisterShopOwnerDto,
+  ) {
     // Check if user exists
-    const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
     if (existingUser) {
       throw new BadRequestException('Email already registered');
     }
@@ -68,7 +73,7 @@ export class AuthService {
           name: 'OWNER',
           tenant_id: shop.id,
           permissions: { all: true },
-        }
+        },
       });
 
       const user = await prisma.user.create({
@@ -134,7 +139,9 @@ export class AuthService {
     }
 
     if (user.status !== 'PENDING_APPROVAL') {
-      throw new BadRequestException('Only pending registrations can be cancelled');
+      throw new BadRequestException(
+        'Only pending registrations can be cancelled',
+      );
     }
 
     // Delete user and shop in a transaction
@@ -148,9 +155,13 @@ export class AuthService {
     return { message: 'Registration cancelled successfully' };
   }
 
-  async registerStaff(dto: import('./dto/register-staff.dto').RegisterStaffDto) {
+  async registerStaff(
+    dto: import('./dto/register-staff.dto').RegisterStaffDto,
+  ) {
     // Verify shop exists
-    const shop = await this.prisma.shop.findUnique({ where: { id: dto.shopId } });
+    const shop = await this.prisma.shop.findUnique({
+      where: { id: dto.shopId },
+    });
     if (!shop) {
       throw new BadRequestException('Shop not found');
     }
@@ -161,24 +172,31 @@ export class AuthService {
     }
 
     // Check if user exists
-    const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
     if (existingUser) {
       throw new BadRequestException('Email already registered');
     }
 
     // Find the role by name or ID for this shop
     const roleInput = dto.role || 'CASHIER';
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roleInput);
-    
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        roleInput,
+      );
+
     const roleRecord = await this.prisma.role.findFirst({
-      where: { 
-        tenant_id: shop.id, 
-        ...(isUuid ? { id: roleInput } : { name: roleInput.toUpperCase() })
-      }
+      where: {
+        tenant_id: shop.id,
+        ...(isUuid ? { id: roleInput } : { name: roleInput.toUpperCase() }),
+      },
     });
-    
+
     if (!roleRecord) {
-      throw new BadRequestException(`Role ${roleInput} not found for this shop`);
+      throw new BadRequestException(
+        `Role ${roleInput} not found for this shop`,
+      );
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
@@ -218,7 +236,9 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      return { message: 'If this email is registered, a reset code will be sent.' };
+      return {
+        message: 'If this email is registered, a reset code will be sent.',
+      };
     }
 
     const code = crypto.randomInt(100000, 999999).toString();
@@ -366,7 +386,10 @@ export class AuthService {
         throw new UnauthorizedException('Invalid email or password');
       }
 
-      const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      const isPasswordValid = await bcrypt.compare(
+        password,
+        user.password_hash,
+      );
 
       if (!isPasswordValid) {
         await this.userService.incrementFailedLoginAttempts(email);
@@ -380,61 +403,88 @@ export class AuthService {
 
       // Check PENDING / REJECTED before is_active so we return useful info
       if (user.status === 'PENDING_APPROVAL') {
-        // Return special error with shop info so frontend can redirect properly
         const shop = user.tenant_id
           ? await this.prisma.shop.findUnique({ where: { id: user.tenant_id } })
           : null;
-        throw new HttpException(
-          {
-            statusCode: 403,
-            message: 'APPROVAL_WAITING',
-            data: {
-              status: 'PENDING_APPROVAL',
-              subscriptionPlan: shop?.subscriptionPlan ?? null,
-              paymentStatus: shop?.paymentStatus ?? null,
-            },
-          },
-          HttpStatus.FORBIDDEN,
-        );
+
+        throw new ForbiddenException({
+          message: 'Account is pending approval.',
+          status: user.status,
+          userId: user.user_id,
+          is_active: user.is_active,
+          is_verified: user.is_verified,
+          subscriptionPlan: shop?.subscriptionPlan ?? null,
+          paymentStatus: shop?.paymentStatus ?? null,
+        });
       }
 
       if (user.status === 'REJECTED') {
-        throw new UnauthorizedException('Account has been rejected by administration');
+        throw new ForbiddenException({
+          message: 'Account was rejected.',
+          status: user.status,
+          userId: user.user_id,
+          is_active: user.is_active,
+          is_verified: user.is_verified,
+        });
       }
 
-      let shopInfo: { subscriptionPlan?: string | null; paymentStatus?: string | null; subscriptionStatus?: string | null; logoUrl?: string | null } = {};
+      let shopInfo: {
+        subscriptionPlan?: string | null;
+        paymentStatus?: string | null;
+        subscriptionStatus?: string | null;
+        logoUrl?: string | null;
+      } = {};
+
       if (user.role === 'OWNER' && user.tenant_id) {
-        const shop = await this.prisma.shop.findUnique({ where: { id: user.tenant_id } });
+        const shop = await this.prisma.shop.findUnique({
+          where: { id: user.tenant_id },
+        });
+
         if (shop) {
-          shopInfo = { 
-            subscriptionPlan: shop.subscriptionPlan, 
+          shopInfo = {
+            subscriptionPlan: shop.subscriptionPlan,
             paymentStatus: shop.paymentStatus,
             subscriptionStatus: shop.subscriptionStatus,
-            logoUrl: shop.logo_url
+            logoUrl: shop.logo_url,
           };
         }
       }
 
       if (shopInfo.subscriptionStatus === 'SUSPENDED') {
-        throw new HttpException(
-          {
-            statusCode: 403,
-            message: 'ACCOUNT_SUSPENDED',
-            data: { status: 'SUSPENDED' },
-          },
-          HttpStatus.FORBIDDEN,
-        );
+        throw new ForbiddenException({
+          message: 'Account is suspended.',
+          status: 'SUSPENDED',
+          userId: user.user_id,
+          is_active: user.is_active,
+          is_verified: user.is_verified,
+        });
       }
 
       if (!user.is_active) {
         // If owner is approved but hasn't paid, allow login so they can access /payment
-        if (!(user.role === 'OWNER' && user.status === 'APPROVED' && shopInfo.paymentStatus === 'PENDING')) {
-          throw new InactiveUserException();
+        if (
+          !(
+            user.role === 'OWNER' &&
+            user.status === 'APPROVED' &&
+            shopInfo.paymentStatus === 'PENDING'
+          )
+        ) {
+          throw new InactiveUserException({
+            status: user.status,
+            userId: user.user_id,
+            is_active: user.is_active,
+            is_verified: user.is_verified,
+          });
         }
       }
 
       if (!user.is_verified) {
-        throw new UnverifiedUserException();
+        throw new UnverifiedUserException({
+          status: user.status,
+          userId: user.user_id,
+          is_active: user.is_active,
+          is_verified: user.is_verified,
+        });
       }
 
       await this.userService.resetLoginState(email);
@@ -470,7 +520,9 @@ export class AuthService {
       };
 
       const access_token = await this.jwtService.signAsync(payload);
-      const refresh_token = await this.jwtService.signAsync(payload, { expiresIn: '7d' });
+      const refresh_token = await this.jwtService.signAsync(payload, {
+        expiresIn: '7d',
+      });
 
       // shopInfo is already fetched above
 
@@ -495,6 +547,7 @@ export class AuthService {
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
+        error instanceof ForbiddenException ||
         error instanceof InactiveUserException ||
         error instanceof UnverifiedUserException ||
         error instanceof LockedAccountException
@@ -541,7 +594,9 @@ export class AuthService {
       throw new BadRequestException('OTP or TOTP token is required');
     }
 
-    const loginTokens = await this.twoFactorAuthService.issueLoginTokens(payload.sub);
+    const loginTokens = await this.twoFactorAuthService.issueLoginTokens(
+      payload.sub,
+    );
     return {
       statusCode: 200,
       message: 'Login successful',
@@ -550,7 +605,9 @@ export class AuthService {
   }
 
   async completePayment(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { user_id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { user_id: userId },
+    });
     if (!user || !user.tenant_id) {
       throw new BadRequestException('User or shop not found');
     }
@@ -598,12 +655,12 @@ export class AuthService {
       });
     });
 
-    return { 
+    return {
       message: 'Payment completed. Account is now active.',
       accountDetails: {
         shopId: tenantId,
         email: email,
-      }
+      },
     };
   }
 }
