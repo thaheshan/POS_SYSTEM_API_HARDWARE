@@ -12,7 +12,23 @@ import { calculateStockStatus } from 'src/utils/stockHelper';
 
 type StockOverviewPayload = Prisma.StockGetPayload<{
   include: {
-    product: { select: { name: true; sku: true; minimumStockLevel: true; sellingPrice: true; purchasePrice: true; sellType: true; measurementUnit: true; category: { select: { name: true } }; images: { select: { imageUrl: true; isPrimary: true }; orderBy: { isPrimary: 'desc' }; take: 1 } } };
+    product: {
+      select: {
+        name: true;
+        sku: true;
+        minimumStockLevel: true;
+        sellingPrice: true;
+        purchasePrice: true;
+        sellType: true;
+        measurementUnit: true;
+        category: { select: { name: true } };
+        images: {
+          select: { imageUrl: true; isPrimary: true };
+          orderBy: { isPrimary: 'desc' };
+          take: 1;
+        };
+      };
+    };
     warehouse: {
       select: { name: true };
     };
@@ -83,7 +99,23 @@ export class StockService {
         tenantId,
       },
       include: {
-        product: { select: { name: true, sku: true, minimumStockLevel: true, sellingPrice: true, purchasePrice: true, sellType: true, measurementUnit: true, category: { select: { name: true } }, images: { select: { imageUrl: true, isPrimary: true }, orderBy: { isPrimary: 'desc' }, take: 1 } } },
+        product: {
+          select: {
+            name: true,
+            sku: true,
+            minimumStockLevel: true,
+            sellingPrice: true,
+            purchasePrice: true,
+            sellType: true,
+            measurementUnit: true,
+            category: { select: { name: true } },
+            images: {
+              select: { imageUrl: true, isPrimary: true },
+              orderBy: { isPrimary: 'desc' },
+              take: 1,
+            },
+          },
+        },
         warehouse: { select: { name: true } },
       },
     });
@@ -205,34 +237,49 @@ export class StockService {
     `;
 
     if (!stocks || stocks.length === 0) {
-      this.logger.warn(`Stock not found: product=${dto.product_id}, warehouse=${dto.warehouse_id}. Auto-creating...`);
-      
+      this.logger.warn(
+        `Stock not found: product=${dto.product_id}, warehouse=${dto.warehouse_id}. Auto-creating...`,
+      );
+
       let warehouseId = dto.warehouse_id;
 
       // Auto-create stock record if missing
       let warehouse = await tx.warehouse.findUnique({
         where: { id: warehouseId },
-        select: { id: true, branchId: true }
+        select: { id: true, branchId: true },
       });
-      
+
       if (!warehouse) {
         // Try finding any active warehouse
         warehouse = await tx.warehouse.findFirst({
-           where: { tenantId, isActive: true },
-           select: { id: true, branchId: true }
+          where: { tenantId, isActive: true },
+          select: { id: true, branchId: true },
         });
 
         // If still no warehouse, auto-create branch and warehouse
         if (!warehouse) {
-           let branch = await tx.branch.findFirst({ where: { tenantId, isActive: true } });
-           if (!branch) {
-              branch = await tx.branch.create({
-                 data: { tenantId, name: 'Main Branch', code: 'BR-' + Date.now(), isActive: true }
-              });
-           }
-           warehouse = await tx.warehouse.create({
-              data: { tenantId, branchId: branch.id, name: 'Main Warehouse', code: 'WH-' + Date.now(), isActive: true }
-           });
+          let branch = await tx.branch.findFirst({
+            where: { tenantId, isActive: true },
+          });
+          if (!branch) {
+            branch = await tx.branch.create({
+              data: {
+                tenantId,
+                name: 'Main Branch',
+                code: 'BR-' + Date.now(),
+                isActive: true,
+              },
+            });
+          }
+          warehouse = await tx.warehouse.create({
+            data: {
+              tenantId,
+              branchId: branch.id,
+              name: 'Main Warehouse',
+              code: 'WH-' + Date.now(),
+              isActive: true,
+            },
+          });
         }
         warehouseId = warehouse.id;
       }
@@ -245,9 +292,9 @@ export class StockService {
           warehouseId: warehouseId,
           branchId: warehouse.branchId,
           quantity: 0,
-        }
+        },
       });
-      
+
       return newStock;
     }
 
@@ -398,7 +445,9 @@ export class StockService {
       reserved_quantity: reserved,
       available_quantity: stockStatus.available_quantity,
       damaged_quantity: Number(stock.damagedQuantity),
-      minimum_stock_level: stock.product.minimumStockLevel ? Number(stock.product.minimumStockLevel) : 0,
+      minimum_stock_level: stock.product.minimumStockLevel
+        ? Number(stock.product.minimumStockLevel)
+        : 0,
       low_stock: stockStatus.low_stock,
       out_of_stock: stockStatus.out_of_stock,
       sellType: stock.product.sellType,
@@ -427,13 +476,18 @@ export class StockService {
 
       if (isLowStockRequested) return s.low_stock === true;
       if (isOutOfStockRequested) return s.out_of_stock === true;
-
     });
   }
 
-  async getStockTrend(tenantId: string, startDateStr?: string, endDateStr?: string) {
-    this.logger.log(`Generating stock trend for tenant=${tenantId}, start=${startDateStr}, end=${endDateStr}`);
-    
+  async getStockTrend(
+    tenantId: string,
+    startDateStr?: string,
+    endDateStr?: string,
+  ) {
+    this.logger.log(
+      `Generating stock trend for tenant=${tenantId}, start=${startDateStr}, end=${endDateStr}`,
+    );
+
     let startDate = new Date();
     if (startDateStr) {
       startDate = new Date(startDateStr);
@@ -465,23 +519,29 @@ export class StockService {
     });
 
     const trendMap = new Map<string, { in: number; out: number }>();
-    
+
     // Calculate difference in days
     const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
-    
+
     // Limit to max 90 days to keep the chart clean and high performance
     const limitDays = Math.min(diffDays, 90);
 
     for (let i = limitDays - 1; i >= 0; i--) {
       const d = new Date(endDate);
       d.setDate(d.getDate() - i);
-      const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+      const label = d.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+      });
       trendMap.set(label, { in: 0, out: 0 });
     }
 
     movements.forEach((m) => {
-      const label = new Date(m.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+      const label = new Date(m.createdAt).toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+      });
       if (trendMap.has(label)) {
         const current = trendMap.get(label)!;
         const qty = Math.abs(Number(m.quantity));
