@@ -7,6 +7,7 @@ import { Decimal } from '@prisma/client/runtime/client';
 import { InsufficientStockException } from '../exceptions/stock_bad_request.exception';
 import { RawStockRow } from '../interfaces/row_stock.interface';
 import { GetStockFilterDto } from './dto/get-stock-filter.dto';
+import { TransferStockDto } from './dto/transfer-stock.dto';
 import { StockOverviewResponse } from '../interfaces/stock-overview.interface';
 import { calculateStockStatus } from 'src/utils/stockHelper';
 
@@ -182,6 +183,98 @@ export class StockService {
         updatedStock,
         'Stock deducted successfully',
       );
+    });
+  }
+
+  async transferStock(
+    dto: TransferStockDto,
+    userId: string,
+    tenantId: string,
+  ) {
+    this.logger.log(
+      `Transferring stock: product=${dto.productId}, from=${dto.sourceWarehouseId} to=${dto.destinationWarehouseId}, quantity=${dto.quantity}, user=${userId}, tenant=${tenantId}`,
+    );
+
+    if (dto.sourceWarehouseId === dto.destinationWarehouseId) {
+      throw new InsufficientStockException(0, dto.quantity); // Re-use or throw bad request
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Find or create source stock
+      const sourceStock = await this.findOrCreateStock(
+        tx,
+        {
+          product_id: dto.productId,
+          warehouse_id: dto.sourceWarehouseId,
+        },
+        tenantId,
+      );
+
+      // Check available quantity
+      const availableDecimal = sourceStock.quantity.minus(sourceStock.reservedQuantity);
+      if (availableDecimal.lessThan(dto.quantity)) {
+         throw new InsufficientStockException(availableDecimal.toNumber(), dto.quantity);
+      }
+
+      // 2. Find or create destination stock
+      const destStock = await this.findOrCreateStock(
+        tx,
+        {
+          product_id: dto.productId,
+          warehouse_id: dto.destinationWarehouseId,
+        },
+        tenantId,
+      );
+
+      // 3. Deduct from source
+      const updatedSource = await this.updateStockQuantity(
+        tx,
+        sourceStock.id,
+        -dto.quantity,
+      );
+
+      // 4. Add to dest
+      const updatedDest = await this.updateStockQuantity(
+        tx,
+        destStock.id,
+        dto.quantity,
+      );
+
+      // 5. Log movement for source (Deduction)
+      await tx.stockMovement.create({
+        data: {
+          tenantId,
+          productId: dto.productId,
+          warehouseId: dto.sourceWarehouseId,
+          type: MovementType.TRANSFER,
+          quantity: dto.quantity,
+          previousQuantity: sourceStock.quantity,
+          newQuantity: updatedSource.quantity,
+          reference: dto.reason || 'Stock Transfer Out',
+          createdBy: userId,
+        },
+      });
+
+      // 6. Log movement for dest (Addition)
+      await tx.stockMovement.create({
+        data: {
+          tenantId,
+          productId: dto.productId,
+          warehouseId: dto.destinationWarehouseId,
+          type: MovementType.TRANSFER,
+          quantity: dto.quantity,
+          previousQuantity: destStock.quantity,
+          newQuantity: updatedDest.quantity,
+          reference: dto.reason || 'Stock Transfer In',
+          createdBy: userId,
+        },
+      });
+
+      return {
+        message: 'Stock transferred successfully',
+        sourceStock: updatedSource,
+        destinationStock: updatedDest
+      };
     });
   }
 
