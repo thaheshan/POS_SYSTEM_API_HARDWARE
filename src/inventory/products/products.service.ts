@@ -475,6 +475,53 @@ export class ProductsService {
         throw new NotFoundException('Product not found');
       }
 
+      const isEnabled =
+        dto.isDiscountEnabled !== undefined
+          ? dto.isDiscountEnabled
+          : product.isDiscountEnabled;
+      if (isEnabled) {
+        const type =
+          dto.discountType !== undefined
+            ? dto.discountType
+            : product.discountType;
+        const maxVal =
+          dto.maxAllowedDiscount !== undefined
+            ? dto.maxAllowedDiscount
+            : Number(product.maxAllowedDiscount ?? 0);
+        const defaultVal =
+          dto.defaultDiscountValue !== undefined
+            ? dto.defaultDiscountValue
+            : Number(product.defaultDiscountValue ?? 0);
+
+        if (maxVal < 0) {
+          throw new BadRequestException(
+            'Maximum allowed discount cannot be negative',
+          );
+        }
+        if (defaultVal < 0) {
+          throw new BadRequestException(
+            'Default discount value cannot be negative',
+          );
+        }
+        if (type === 'PERCENTAGE') {
+          if (maxVal > 100) {
+            throw new BadRequestException(
+              'Percentage discount cannot exceed 100%',
+            );
+          }
+          if (defaultVal > 100) {
+            throw new BadRequestException(
+              'Default percentage discount cannot exceed 100%',
+            );
+          }
+        }
+        if (defaultVal > maxVal) {
+          throw new BadRequestException(
+            'Default discount cannot exceed maximum allowed discount',
+          );
+        }
+      }
+
       return await this.prisma.product.update({
         where: { id: productId },
         data: {

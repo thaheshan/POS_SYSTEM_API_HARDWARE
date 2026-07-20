@@ -297,8 +297,44 @@ export class SalesService {
           }
 
           const unitPrice = item.unitPrice ?? Number(product.sellingPrice);
-          const lineTotal = unitPrice * item.quantity;
-          subtotal += lineTotal;
+          if (unitPrice < 0) {
+            throw new BadRequestException(
+              `Unit price cannot be negative for product "${product.name}"`,
+            );
+          }
+
+          // Enforce backend validation of discount limit
+          const regularPrice = Number(product.sellingPrice);
+          const appliedDiscount = regularPrice - unitPrice;
+
+          if (appliedDiscount > 0.01) {
+            if (!product.isDiscountEnabled || !product.isDiscountApproved) {
+              throw new BadRequestException(
+                `Discounts are not enabled or approved for product "${product.name}"`,
+              );
+            }
+
+            let maxAllowedAmount = 0;
+            const maxAllowedDiscount = Number(product.maxAllowedDiscount ?? 0);
+            if (product.discountType === 'PERCENTAGE') {
+              maxAllowedAmount = (regularPrice * maxAllowedDiscount) / 100;
+            } else {
+              maxAllowedAmount = maxAllowedDiscount;
+            }
+
+            if (appliedDiscount - maxAllowedAmount > 0.01) {
+              const formattedLimit =
+                product.discountType === 'PERCENTAGE'
+                  ? `${maxAllowedDiscount}%`
+                  : `Rs. ${maxAllowedDiscount}`;
+              throw new BadRequestException(
+                `Applied discount of Rs. ${appliedDiscount.toFixed(2)} on product "${product.name}" exceeds the maximum allowed limit of ${formattedLimit}`,
+              );
+            }
+          }
+
+          const lineTotal = Number((unitPrice * item.quantity).toFixed(2));
+          subtotal = Number((subtotal + lineTotal).toFixed(2));
 
           const stockRecord = await tx.stock.findFirst({
             where: {
@@ -348,12 +384,16 @@ export class SalesService {
           });
 
           const purchasePrice = Number(product.purchasePrice ?? 0);
-          const costPriceTotal = purchasePrice * item.quantity;
-          const profit = lineTotal - costPriceTotal;
+          const costPriceTotal = Number(
+            (purchasePrice * item.quantity).toFixed(2),
+          );
+          const profit = Number((lineTotal - costPriceTotal).toFixed(2));
 
           const taxRate = Number(product.taxRate ?? 0);
-          const basePrice = lineTotal / (1 + taxRate / 100);
-          const taxAmount = lineTotal - basePrice;
+          const basePrice = Number(
+            (lineTotal / (1 + taxRate / 100)).toFixed(2),
+          );
+          const taxAmount = Number((lineTotal - basePrice).toFixed(2));
 
           lineItems.push({
             productId: item.productId,
@@ -385,14 +425,17 @@ export class SalesService {
 
         // --- 2. Calculate totals ---
         const discount = dto.discount ?? 0;
-        const afterDiscount = subtotal - discount;
-        const taxAmount = lineItems.reduce(
-          (sum, li) => sum + Number(li.taxAmount),
-          0,
+        const totalAmount = Number((subtotal - discount).toFixed(2));
+        if (totalAmount < 0) {
+          throw new BadRequestException(
+            `Grand total after discounts cannot be negative (calculated total: Rs. ${totalAmount})`,
+          );
+        }
+        const taxAmount = Number(
+          lineItems
+            .reduce((sum, li) => sum + Number(li.taxAmount), 0)
+            .toFixed(2),
         );
-
-        // Total amount is simply Subtotal minus discount. Tax is already included inside the Subtotal.
-        const totalAmount = afterDiscount;
 
         // --- 3. Create Sales Invoice ---
         const timestamp = Date.now().toString(); // Use full timestamp
