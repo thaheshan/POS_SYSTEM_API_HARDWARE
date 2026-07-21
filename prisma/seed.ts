@@ -1,4 +1,12 @@
-import { PrismaClient, MovementType, TaxCategory, SaleType, PaymentStatus, InvoiceStatus, Role, SubscriptionPaymentStatus } from '@prisma/client';
+import {
+  PrismaClient,
+  MovementType,
+  TaxCategory,
+  SaleType,
+  PaymentStatus,
+  InvoiceStatus,
+  SubscriptionPaymentStatus,
+} from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
@@ -13,7 +21,9 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 function randomDate(start: Date, end: Date) {
-  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+  return new Date(
+    start.getTime() + Math.random() * (end.getTime() - start.getTime()),
+  );
 }
 
 function randomInt(min: number, max: number) {
@@ -22,7 +32,7 @@ function randomInt(min: number, max: number) {
 
 async function main() {
   console.log('Starting seed...');
-  
+
   // Create Shop
   const shop = await prisma.shop.create({
     data: {
@@ -55,19 +65,48 @@ async function main() {
     },
   });
 
+  // Ensure standard roles exist
+  let ownerRole = await prisma.role.findFirst({
+    where: { tenant_id: shop.id, name: 'OWNER' },
+  });
+  if (!ownerRole) {
+    ownerRole = await prisma.role.create({
+      data: {
+        name: 'OWNER',
+        tenant_id: shop.id,
+        permissions: { all: true },
+      },
+    });
+    console.log(`Created role: OWNER`);
+  }
+
+  let cashierRole = await prisma.role.findFirst({
+    where: { tenant_id: shop.id, name: 'CASHIER' },
+  });
+  if (!cashierRole) {
+    cashierRole = await prisma.role.create({
+      data: {
+        name: 'CASHIER',
+        tenant_id: shop.id,
+        permissions: { checkout: true },
+      },
+    });
+    console.log(`Created role: CASHIER`);
+  }
+
   // Create Owner User
   const passwordHash = await bcrypt.hash('Thaheshan0911@@', 10);
   const owner = await prisma.user.upsert({
     where: { email: 'thaheshanhamsu@gmail.com' },
     update: {
-        password_hash: passwordHash,
-        tenant_id: shop.id,
-        role: Role.OWNER,
-        first_name: 'suresh',
-        last_name: 'somashantha thaheshan',
-        is_active: true,
-        is_verified: true,
-        status: 'APPROVED'
+      password_hash: passwordHash,
+      tenant_id: shop.id,
+      role_id: ownerRole.id,
+      first_name: 'suresh',
+      last_name: 'somashantha thaheshan',
+      is_active: true,
+      is_verified: true,
+      status: 'APPROVED',
     },
     create: {
       email: 'thaheshanhamsu@gmail.com',
@@ -76,7 +115,7 @@ async function main() {
       first_name: 'suresh',
       last_name: 'somashantha thaheshan',
       phone: '+94770000000',
-      role: Role.OWNER,
+      role_id: ownerRole.id,
       is_active: true,
       is_verified: true,
       status: 'APPROVED',
@@ -84,8 +123,44 @@ async function main() {
   });
   console.log(`Created owner: ${owner.email}`);
 
+  // Create Cashier User
+  const cashierPasswordHash = await bcrypt.hash('SecurePass@2026', 10);
+  const cashier = await prisma.user.upsert({
+    where: { email: 'cashier@test.com' },
+    update: {
+      password_hash: cashierPasswordHash,
+      tenant_id: shop.id,
+      role_id: cashierRole.id,
+      first_name: 'Cashier',
+      last_name: 'User',
+      is_active: true,
+      is_verified: true,
+      status: 'APPROVED',
+    },
+    create: {
+      email: 'cashier@test.com',
+      password_hash: cashierPasswordHash,
+      tenant_id: shop.id,
+      first_name: 'Cashier',
+      last_name: 'User',
+      phone: '+94770000002',
+      role_id: cashierRole.id,
+      is_active: true,
+      is_verified: true,
+      status: 'APPROVED',
+    },
+  });
+  console.log(`Created cashier: ${cashier.email}`);
+
   // Categories
-  const categoriesData = ['Cement', 'Steel', 'Tools', 'Plumbing', 'Electrical', 'Paint'];
+  const categoriesData = [
+    'Cement',
+    'Steel',
+    'Tools',
+    'Plumbing',
+    'Electrical',
+    'Paint',
+  ];
   const categories: Record<string, string> = {};
   for (const catName of categoriesData) {
     const cat = await prisma.category.create({
@@ -95,7 +170,13 @@ async function main() {
   }
 
   // Brands
-  const brandsData = ['Holcim', 'Tokyo Super', 'Bosch', 'Stanley', 'Asian Paint'];
+  const brandsData = [
+    'Holcim',
+    'Tokyo Super',
+    'Bosch',
+    'Stanley',
+    'Asian Paint',
+  ];
   const brands: Record<string, string> = {};
   for (const brandName of brandsData) {
     const brand = await prisma.brand.create({
@@ -122,19 +203,123 @@ async function main() {
 
   // Products
   const productsData = [
-    { name: 'Holcim Cement 50kg', sku: 'HCM-50-001', category: 'Cement', brand: 'Holcim', unit: 'Kilogram', price: 1650, cost: 1400 },
-    { name: 'Tokyo Super Cement', sku: 'TKY-50-002', category: 'Cement', brand: 'Tokyo Super', unit: 'Kilogram', price: 1720, cost: 1500 },
-    { name: 'Steel Rods 12mm', sku: 'STL-12-002', category: 'Steel', brand: null, unit: 'Piece', price: 2450, cost: 2000 },
-    { name: 'Steel Rods 16mm', sku: 'STL-16-003', category: 'Steel', brand: null, unit: 'Piece', price: 3200, cost: 2600 },
-    { name: 'Bosch Power Drill 18V', sku: 'BSH-DR-001', category: 'Tools', brand: 'Bosch', unit: 'Piece', price: 14500, cost: 12000 },
-    { name: 'Stanley Hammer 20oz', sku: 'STY-HM-005', category: 'Tools', brand: 'Stanley', unit: 'Piece', price: 1850, cost: 1500 },
-    { name: 'PVC Pipe 2 inch (10ft)', sku: 'PVC-2I-005', category: 'Plumbing', brand: null, unit: 'Piece', price: 1850, cost: 1400 },
-    { name: 'Water Tap Brass 1/2"', sku: 'TAP-BR-001', category: 'Plumbing', brand: null, unit: 'Piece', price: 1250, cost: 900 },
-    { name: 'Circuit Breaker 32A', sku: 'ELE-CB-032', category: 'Electrical', brand: null, unit: 'Piece', price: 2100, cost: 1700 },
-    { name: 'Copper Wire 1.5mm 1Roll', sku: 'ELE-WR-015', category: 'Electrical', brand: null, unit: 'Roll', price: 5800, cost: 4500 },
-    { name: 'Asian Paint White 4L', sku: 'PNT-WH-003', category: 'Paint', brand: 'Asian Paint', unit: 'Liter', price: 3200, cost: 2500 },
-    { name: 'Paint Roller 9 inch', sku: 'PNT-RL-009', category: 'Paint', brand: null, unit: 'Piece', price: 850, cost: 500 },
-    { name: 'Nails 3 inch (1kg)', sku: 'NLS-3I-004', category: 'Tools', brand: null, unit: 'Kilogram', price: 450, cost: 300 },
+    {
+      name: 'Holcim Cement 50kg',
+      sku: 'HCM-50-001',
+      category: 'Cement',
+      brand: 'Holcim',
+      unit: 'Kilogram',
+      price: 1650,
+      cost: 1400,
+    },
+    {
+      name: 'Tokyo Super Cement',
+      sku: 'TKY-50-002',
+      category: 'Cement',
+      brand: 'Tokyo Super',
+      unit: 'Kilogram',
+      price: 1720,
+      cost: 1500,
+    },
+    {
+      name: 'Steel Rods 12mm',
+      sku: 'STL-12-002',
+      category: 'Steel',
+      brand: null,
+      unit: 'Piece',
+      price: 2450,
+      cost: 2000,
+    },
+    {
+      name: 'Steel Rods 16mm',
+      sku: 'STL-16-003',
+      category: 'Steel',
+      brand: null,
+      unit: 'Piece',
+      price: 3200,
+      cost: 2600,
+    },
+    {
+      name: 'Bosch Power Drill 18V',
+      sku: 'BSH-DR-001',
+      category: 'Tools',
+      brand: 'Bosch',
+      unit: 'Piece',
+      price: 14500,
+      cost: 12000,
+    },
+    {
+      name: 'Stanley Hammer 20oz',
+      sku: 'STY-HM-005',
+      category: 'Tools',
+      brand: 'Stanley',
+      unit: 'Piece',
+      price: 1850,
+      cost: 1500,
+    },
+    {
+      name: 'PVC Pipe 2 inch (10ft)',
+      sku: 'PVC-2I-005',
+      category: 'Plumbing',
+      brand: null,
+      unit: 'Piece',
+      price: 1850,
+      cost: 1400,
+    },
+    {
+      name: 'Water Tap Brass 1/2"',
+      sku: 'TAP-BR-001',
+      category: 'Plumbing',
+      brand: null,
+      unit: 'Piece',
+      price: 1250,
+      cost: 900,
+    },
+    {
+      name: 'Circuit Breaker 32A',
+      sku: 'ELE-CB-032',
+      category: 'Electrical',
+      brand: null,
+      unit: 'Piece',
+      price: 2100,
+      cost: 1700,
+    },
+    {
+      name: 'Copper Wire 1.5mm 1Roll',
+      sku: 'ELE-WR-015',
+      category: 'Electrical',
+      brand: null,
+      unit: 'Roll',
+      price: 5800,
+      cost: 4500,
+    },
+    {
+      name: 'Asian Paint White 4L',
+      sku: 'PNT-WH-003',
+      category: 'Paint',
+      brand: 'Asian Paint',
+      unit: 'Liter',
+      price: 3200,
+      cost: 2500,
+    },
+    {
+      name: 'Paint Roller 9 inch',
+      sku: 'PNT-RL-009',
+      category: 'Paint',
+      brand: null,
+      unit: 'Piece',
+      price: 850,
+      cost: 500,
+    },
+    {
+      name: 'Nails 3 inch (1kg)',
+      sku: 'NLS-3I-004',
+      category: 'Tools',
+      brand: null,
+      unit: 'Kilogram',
+      price: 450,
+      cost: 300,
+    },
   ];
 
   const createdProducts = [];
@@ -159,7 +344,8 @@ async function main() {
 
     // Initial Stock
     const qty = randomInt(10, 100);
-    if (qty < 15) { // Force some low stock
+    if (qty < 15) {
+      // Force some low stock
       await prisma.stock.create({
         data: {
           tenantId: shop.id,
@@ -168,7 +354,7 @@ async function main() {
           branchId: branch.id,
           quantity: randomInt(1, 4),
           availableQuantity: randomInt(1, 4),
-        }
+        },
       });
     } else {
       await prisma.stock.create({
@@ -179,7 +365,7 @@ async function main() {
           branchId: branch.id,
           quantity: qty,
           availableQuantity: qty,
-        }
+        },
       });
     }
   }
@@ -194,7 +380,7 @@ async function main() {
         name: `Customer ${i}`,
         phone: `077123456${i % 10}`,
         outstandingBalance: 0,
-      }
+      },
     });
     customers.push(c);
   }
@@ -205,13 +391,13 @@ async function main() {
   startDate.setMonth(startDate.getMonth() - 3);
 
   let invoiceCount = 0;
-  
+
   // Roughly 3 sales per day over 90 days = ~270 sales
   const days = 90;
   for (let d = 0; d < days; d++) {
     const currentDay = new Date(startDate);
     currentDay.setDate(startDate.getDate() + d);
-    
+
     const dailySales = randomInt(1, 5);
     for (let s = 0; s < dailySales; s++) {
       const saleTime = new Date(currentDay);
@@ -222,14 +408,14 @@ async function main() {
       const invoiceNumber = `INV-${d}-${s}-${randomInt(1000, 9999)}`;
 
       const itemsData = [];
-      for(let i=0; i<numItems; i++) {
+      for (let i = 0; i < numItems; i++) {
         const prod = createdProducts[randomInt(0, createdProducts.length - 1)];
         const qty = randomInt(1, 5);
         const unitPrice = Number(prod.sellingPrice);
         const costPrice = Number(prod.purchasePrice);
         const lineTotal = unitPrice * qty;
         subtotal += lineTotal;
-        
+
         itemsData.push({
           productId: prod.id,
           productName: prod.name,
@@ -237,7 +423,7 @@ async function main() {
           unitPrice,
           lineTotal,
           costPrice,
-          profit: lineTotal - (costPrice * qty),
+          profit: lineTotal - costPrice * qty,
           warehouseId: warehouse.id,
         });
       }
@@ -260,9 +446,9 @@ async function main() {
           cashierId: owner.user_id,
           createdAt: saleTime,
           items: {
-            create: itemsData
-          }
-        }
+            create: itemsData,
+          },
+        },
       });
       invoiceCount++;
     }

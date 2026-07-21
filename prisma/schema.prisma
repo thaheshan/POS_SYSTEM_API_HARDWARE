@@ -96,6 +96,12 @@ enum ContactStatus {
   REPLIED
 }
 
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+
 // ================= CORE / TENANT MODELS =================
 model User {
   user_id       String  @id @default(uuid())
@@ -317,6 +323,11 @@ model Product {
   createdBy           String?      @map("created_by")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
+  isDiscountEnabled   Boolean      @default(false) @map("is_discount_enabled")
+  discountType        DiscountType? @map("discount_type")
+  maxAllowedDiscount  Decimal?     @map("max_allowed_discount") @db.Decimal(10, 2)
+  defaultDiscountValue Decimal?    @map("default_discount_value") @db.Decimal(10, 2)
+  isDiscountApproved  Boolean      @default(false) @map("is_discount_approved")
 
   shop              Shop               @relation(fields: [tenantId], references: [id])
   category          Category           @relation(fields: [categoryId], references: [id])

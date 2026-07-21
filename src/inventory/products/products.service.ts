@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { StorageClient } from '@supabase/storage-js';
+import { UpdateProductDiscountConfigDto } from './dto/update-product-discount-config.dto';
+import { ApproveProductDiscountDto } from './dto/approve-product-discount.dto';
 
 @Injectable()
 export class ProductsService {
@@ -10,26 +16,38 @@ export class ProductsService {
   constructor(private prisma: PrismaService) {
     // Use StorageClient directly — avoids WebSocket/Realtime issues on Node.js 20
     const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
+    const supabaseKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
     if (supabaseUrl && supabaseKey) {
       this.storage = new StorageClient(`${supabaseUrl}/storage/v1`, {
         apikey: supabaseKey,
         Authorization: `Bearer ${supabaseKey}`,
       });
     } else {
-      console.warn('Supabase URL or Key not found in environment variables. Image uploads will fail.');
+      console.warn(
+        'Supabase URL or Key not found in environment variables. Image uploads will fail.',
+      );
     }
   }
 
-  async createProduct(dto: CreateProductDto, tenantId: string, createdBy: string, imageFile?: any) {
+  async createProduct(
+    dto: CreateProductDto,
+    tenantId: string,
+    createdBy: string,
+    imageFile?: any,
+  ) {
     try {
       console.log('Creating product with DTO:', dto);
       // Ensure numeric fields are parsed since FormData sends strings
       const categoryId = dto.categoryId;
-      const purchasePrice = dto.purchasePrice ? Number(dto.purchasePrice) : undefined;
+      const purchasePrice = dto.purchasePrice
+        ? Number(dto.purchasePrice)
+        : undefined;
       const sellingPrice = Number(dto.sellingPrice);
       const taxRate = dto.taxRate ? Number(dto.taxRate) : undefined;
-      const minimumStockLevel = dto.minimumStockLevel ? Number(dto.minimumStockLevel) : undefined;
+      const minimumStockLevel = dto.minimumStockLevel
+        ? Number(dto.minimumStockLevel)
+        : undefined;
       const initialStock = dto.initialStock ? Number(dto.initialStock) : 0;
 
       // 1. Check if category exists
@@ -80,13 +98,13 @@ export class ProductsService {
           hasBuffer: !!imageFile.buffer,
         });
       }
-      
+
       if (imageFile && this.storage) {
         try {
           const fileExt = imageFile.originalname.split('.').pop();
           const fileName = `${tenantId}/${product.id}_${Date.now()}.${fileExt}`;
           console.log(`Attempting to upload to product-images/${fileName}`);
-          
+
           const { data, error } = await this.storage
             .from('product-images')
             .upload(fileName, imageFile.buffer, {
@@ -95,23 +113,29 @@ export class ProductsService {
             });
 
           if (error) {
-            console.error('Supabase upload error details:', JSON.stringify(error, null, 2));
+            console.error(
+              'Supabase upload error details:',
+              JSON.stringify(error, null, 2),
+            );
             console.error('Raw Supabase error:', error);
           } else {
             console.log('Supabase upload success, getting public URL...');
             const { data: publicUrlData } = this.storage
               .from('product-images')
               .getPublicUrl(fileName);
-            
+
             if (publicUrlData && publicUrlData.publicUrl) {
               await this.prisma.productImage.create({
                 data: {
                   productId: product.id,
                   imageUrl: publicUrlData.publicUrl,
                   isPrimary: true,
-                }
+                },
               });
-              console.log('Image linked to product in DB:', publicUrlData.publicUrl);
+              console.log(
+                'Image linked to product in DB:',
+                publicUrlData.publicUrl,
+              );
             } else {
               console.warn('Failed to retrieve public URL from Supabase');
             }
@@ -136,7 +160,9 @@ export class ProductsService {
 
           // No warehouse exists yet — auto-create a default branch + warehouse
           if (!firstWarehouse) {
-            console.log('No warehouse found for tenant. Auto-creating default Branch + Warehouse...');
+            console.log(
+              'No warehouse found for tenant. Auto-creating default Branch + Warehouse...',
+            );
 
             // Create default branch if needed
             let firstBranch = await this.prisma.branch.findFirst({
@@ -165,14 +191,18 @@ export class ProductsService {
               },
             });
             console.log('Created default warehouse:', firstWarehouse.id);
-
           }
 
           warehouseId = firstWarehouse.id;
           branchId = firstWarehouse.branchId;
         }
 
-        console.log('Resolved warehouseId:', warehouseId, 'branchId:', branchId);
+        console.log(
+          'Resolved warehouseId:',
+          warehouseId,
+          'branchId:',
+          branchId,
+        );
 
         if (warehouseId && branchId) {
           await this.prisma.stock.create({
@@ -243,7 +273,9 @@ export class ProductsService {
 
   async deleteProduct(productId: string, tenantId: string) {
     // Verify ownership
-    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
     if (!product || product.tenantId !== tenantId) {
       throw new NotFoundException('Product not found');
     }
@@ -270,7 +302,12 @@ export class ProductsService {
     return { success: true, message: 'Product deleted successfully' };
   }
 
-  async updateProduct(productId: string, dto: any, tenantId: string, updatedBy: string) {
+  async updateProduct(
+    productId: string,
+    dto: any,
+    tenantId: string,
+    updatedBy: string,
+  ) {
     try {
       console.log('Updating product ID:', productId, 'with DTO:', dto);
 
@@ -303,10 +340,18 @@ export class ProductsService {
       }
 
       // Parse numbers safely
-      const purchasePrice = dto.purchasePrice !== undefined ? Number(dto.purchasePrice) : undefined;
-      const sellingPrice = dto.sellingPrice !== undefined ? Number(dto.sellingPrice) : undefined;
-      const minimumStockLevel = dto.minimumStockLevel !== undefined ? Number(dto.minimumStockLevel) : undefined;
-      const maximumStockLevel = dto.maximumStockLevel !== undefined ? Number(dto.maximumStockLevel) : undefined;
+      const purchasePrice =
+        dto.purchasePrice !== undefined ? Number(dto.purchasePrice) : undefined;
+      const sellingPrice =
+        dto.sellingPrice !== undefined ? Number(dto.sellingPrice) : undefined;
+      const minimumStockLevel =
+        dto.minimumStockLevel !== undefined
+          ? Number(dto.minimumStockLevel)
+          : undefined;
+      const maximumStockLevel =
+        dto.maximumStockLevel !== undefined
+          ? Number(dto.maximumStockLevel)
+          : undefined;
 
       // Update product core fields
       const product = await this.prisma.product.update({
@@ -328,7 +373,7 @@ export class ProductsService {
       // Update stock quantity and warehouse if provided
       if (dto.qty !== undefined && dto.warehouseId) {
         const targetQuantity = Number(dto.qty);
-        
+
         // Find existing stock for this product + warehouse
         const existingStock = await this.prisma.stock.findFirst({
           where: {
@@ -354,7 +399,8 @@ export class ProductsService {
                 where: { id: existingStock.id },
                 data: {
                   quantity: targetQuantity,
-                  availableQuantity: targetQuantity - Number(existingStock.reservedQuantity),
+                  availableQuantity:
+                    targetQuantity - Number(existingStock.reservedQuantity),
                 },
               });
 
@@ -411,6 +457,117 @@ export class ProductsService {
       return product;
     } catch (error) {
       console.error('Error in updateProduct:', error);
+      throw error;
+    }
+  }
+
+  async updateDiscountConfig(
+    productId: string,
+    dto: UpdateProductDiscountConfigDto,
+    tenantId: string,
+  ) {
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { id: productId },
+      });
+
+      if (!product || product.tenantId !== tenantId) {
+        throw new NotFoundException('Product not found');
+      }
+
+      const isEnabled =
+        dto.isDiscountEnabled !== undefined
+          ? dto.isDiscountEnabled
+          : product.isDiscountEnabled;
+      if (isEnabled) {
+        const type =
+          dto.discountType !== undefined
+            ? dto.discountType
+            : product.discountType;
+        const maxVal =
+          dto.maxAllowedDiscount !== undefined
+            ? dto.maxAllowedDiscount
+            : Number(product.maxAllowedDiscount ?? 0);
+        const defaultVal =
+          dto.defaultDiscountValue !== undefined
+            ? dto.defaultDiscountValue
+            : Number(product.defaultDiscountValue ?? 0);
+
+        if (maxVal < 0) {
+          throw new BadRequestException(
+            'Maximum allowed discount cannot be negative',
+          );
+        }
+        if (defaultVal < 0) {
+          throw new BadRequestException(
+            'Default discount value cannot be negative',
+          );
+        }
+        if (type === 'PERCENTAGE') {
+          if (maxVal > 100) {
+            throw new BadRequestException(
+              'Percentage discount cannot exceed 100%',
+            );
+          }
+          if (defaultVal > 100) {
+            throw new BadRequestException(
+              'Default percentage discount cannot exceed 100%',
+            );
+          }
+        }
+        if (defaultVal > maxVal) {
+          throw new BadRequestException(
+            'Default discount cannot exceed maximum allowed discount',
+          );
+        }
+      }
+
+      return await this.prisma.product.update({
+        where: { id: productId },
+        data: {
+          isDiscountEnabled: dto.isDiscountEnabled,
+          discountType: dto.discountType,
+          maxAllowedDiscount: dto.maxAllowedDiscount,
+          defaultDiscountValue: dto.defaultDiscountValue,
+          // Security measure: if they change the config, you might want to auto-revoke approval
+          // isDiscountApproved: false,
+        },
+      });
+    } catch (error) {
+      console.error(
+        `Error updating discount config for product ${productId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async approveDiscount(
+    productId: string,
+    dto: ApproveProductDiscountDto,
+    tenantId: string,
+  ) {
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { id: productId },
+      });
+
+      if (!product || product.tenantId !== tenantId) {
+        throw new NotFoundException('Product not found');
+      }
+
+      // We only update the approval toggle here
+      return await this.prisma.product.update({
+        where: { id: productId },
+        data: {
+          isDiscountApproved: dto.isDiscountApproved,
+        },
+      });
+    } catch (error) {
+      console.error(
+        `Error approving discount for product ${productId}:`,
+        error,
+      );
       throw error;
     }
   }
