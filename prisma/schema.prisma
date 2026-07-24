@@ -27,3 +27,15 @@ model User {
 
   @@map("users")
 }
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  tenant_id   String
+  feature_key String
+  enabled     Boolean  @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([tenant_id, feature_key], name: "tenant_id_feature_key")
+  @@map("feature_flags")
+}
