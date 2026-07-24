@@ -4,3 +4,5 @@
 [CHECKOUT END] dto.customerId: 8f95717d-47f7-4f61-b858-ca4cdfcc657a
 [DB FETCH] Customer found: true, Phone: 0756645486
 SUCCESS: Sent to 94756645486. Response: {"status":"success","message":"Your message was successfully delivered","data":{"uid":"6a4b56cb01535","to":"94756645486","from":"TextLKDemo","message":"Thank you for your purchase from Futura Hardware!\nView your invoice here:\nhttp://localhost:3000/receipt/50ff34a8-646c-4ccb-b2b0-17e1a8650cdb","status":"Delivered","cost":"1","sms_count":1}}
+
+[CHECKOUT END] dto.customerId: undefined
