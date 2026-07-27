@@ -21,6 +21,7 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { ShopsModule } from './shops/shops.module';
 import { ContactModule } from './contact/contact.module';
 import { ActivityLogsModule } from './activity-logs/activity-logs.module';
+import { TaxModule } from './tax/tax.module';
 import { SmsModule } from './sms/sms.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 
@@ -47,6 +48,7 @@ import { WarehousesModule } from './warehouses/warehouses.module';
     ShopsModule,
     ContactModule,
     ActivityLogsModule,
+    TaxModule,
     SmsModule,
     WarehousesModule,
   ],
