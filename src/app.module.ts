@@ -1,13 +1,15 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
+import { RedisModule } from './redis/redis.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { ReportsModule } from './reports/reports.module';
 import { InventoryModule } from './inventory/inventory.module';
-import { ScheduleModule } from '@nestjs/schedule';
 import { StaffModule } from './staff/staff.module';
 import { AdminModule } from './admin/admin.module';
 import { TokenLoggerMiddleware } from './common/middleware/token-logger.middleware';
@@ -32,6 +34,8 @@ import { WarehousesModule } from './warehouses/warehouses.module';
     PrismaModule,
     SystemModule,
     AuthModule,
+    RedisModule,
+    FeatureFlagsModule,
     ReportsModule,
     InventoryModule,
     ScheduleModule.forRoot(),

@@ -10,7 +10,10 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
       provide: REDIS_CLIENT,
       useFactory: () => {
         const redisUrl = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
-        const redis = new Redis(redisUrl);
+        const redis = new Redis(redisUrl, {
+          enableOfflineQueue: false,
+          maxRetriesPerRequest: 1,
+        });
 
         redis.on('error', (err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
