@@ -1,0 +1,69 @@
+ERROR: Failed to log CREATE_SALE - 
+Invalid `this.prisma.user.findUnique()` invocation in
+C:\Users\Thahe\Documents\GitHub\POS_SYSTEM_API_HARDWARE\src\activity-logs\activity-logs.service.ts:10:43
+
+   7 
+   8 async log(tenantId: string, userId: string, action: string, details: string, amount?: number) {
+   9   try {
+→ 10     const user = await this.prisma.user.findUnique({
+           where: {
+             user_id: undefined,
+         ?   email?: String,
+         ?   AND?: UserWhereInput | UserWhereInput[],
+         ?   OR?: UserWhereInput[],
+         ?   NOT?: UserWhereInput | UserWhereInput[],
+         ?   tenant_id?: UuidNullableFilter | String | Null,
+         ?   password_hash?: StringFilter | String,
+         ?   first_name?: StringNullableFilter | String | Null,
+         ?   last_name?: StringNullableFilter | String | Null,
+         ?   phone?: StringNullableFilter | String | Null,
+         ?   role_id?: UuidNullableFilter | String | Null,
+         ?   status?: EnumStaffStatusFilter | StaffStatus,
+         ?   is_active?: BoolFilter | Boolean,
+         ?   is_verified?: BoolFilter | Boolean,
+         ?   two_factor_enabled?: BoolFilter | Boolean,
+         ?   totp_secret?: StringNullableFilter | String | Null,
+         ?   phone_number?: StringNullableFilter | String | Null,
+         ?   last_login?: DateTimeNullableFilter | DateTime | Null,
+         ?   failed_login_attempts?: IntFilter | Int,
+         ?   account_locked_until?: DateTimeNullableFilter | DateTime | Null,
+         ?   created_at?: DateTimeFilter | DateTime,
+         ?   updated_at?: DateTimeFilter | DateTime,
+         ?   password_reset_token?: StringNullableFilter | String | Null,
+         ?   password_reset_expiry?: DateTimeNullableFilter | DateTime | Null,
+         ?   password_reset_used?: BoolFilter | Boolean,
+         ?   shop?: ShopNullableScalarRelationFilter | ShopWhereInput | Null,
+         ?   managedBranches?: BranchListRelationFilter,
+         ?   managedWarehouses?: WarehouseListRelationFilter,
+         ?   createdProducts?: ProductListRelationFilter,
+         ?   stockMovements?: StockMovementListRelationFilter,
+         ?   salesInvoices?: SalesInvoiceListRelationFilter,
+         ?   receivedGrns?: GoodsReceivedNoteListRelationFilter,
+         ?   createdReturns?: SalesReturnListRelationFilter,
+         ?   approvedReturns?: SalesReturnListRelationFilter,
+         ?   notifications?: NotificationListRelationFilter,
+         ?   role?: RoleNullableScalarRelationFilter | RoleWhereInput | Null,
+         ?   expenses?: ExpenseListRelationFilter,
+         ?   activityLogs?: ActivityLogListRelationFilter
+           },
+           select: {
+             first_name: true,
+             last_name: true,
+             email: true,
+             role: {
+               select: {
+                 name: true
+               }
+             }
+           }
+         })
+
+Argument `where` of type UserWhereUniqueInput needs at least one of `user_id` or `email` arguments. Available options are marked with ?.
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged ADD_EXPENSE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan

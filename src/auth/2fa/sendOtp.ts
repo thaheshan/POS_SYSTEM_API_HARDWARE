@@ -36,6 +36,10 @@ export class SendSmsOtpService {
     // Store in Redis with key `otp:{user_id}`, TTL = 300 seconds
     try {
       await this.redis.set(`otp:${userId}`, otp, 'EX', 300);
+      
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DEV ONLY] SMS OTP for ${user.phone_number}: ${otp}`);
+      }
     } catch (err) {
       throw new InternalServerErrorException('Redis unavailable for OTP storage');
     }
