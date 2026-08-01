@@ -61,6 +61,16 @@ describe('FeatureFlagsService', () => {
       const result = await service.isFeatureEnabled('tenant-1', 'DISCOUNTS');
       expect(result).toBe(false);
     });
+
+    it('should default to disabled when both Redis and Postgres fail', async () => {
+      redisMock.get.mockRejectedValue(new Error('Redis connection error'));
+      prismaMock.featureFlag.findUnique.mockRejectedValue(new Error('Postgres unavailable'));
+
+      const result = await service.isFeatureEnabled('tenant-1', 'DISCOUNTS');
+
+      expect(result).toBe(false);
+      expect(redisMock.set).not.toHaveBeenCalled();
+    });
   });
 
   describe('toggleFeature', () => {
@@ -79,6 +89,20 @@ describe('FeatureFlagsService', () => {
         where: { user_id: 'user-1' },
         select: { role: true, is_active: true },
       });
+      expect(prismaMock.featureFlag.upsert).not.toHaveBeenCalled();
+    });
+
+    it('should throw ForbiddenException if the live DB user is inactive even with a valid JWT', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({
+        user_id: 'user-1',
+        role: 'owner',
+        is_active: false,
+      });
+
+      await expect(
+        service.toggleFeature('user-1', 'tenant-1', 'DISCOUNTS', true),
+      ).rejects.toThrow(ForbiddenException);
+
       expect(prismaMock.featureFlag.upsert).not.toHaveBeenCalled();
     });
 

@@ -18,40 +18,46 @@ export class FeatureFlagsService {
 
   async isFeatureEnabled(tenantId: string, featureKey: string): Promise<boolean> {
     const cacheKey = this.getCacheKey(tenantId, featureKey);
-    let cachedValue: string | null = null;
 
     try {
-      cachedValue = await this.redis.get(cacheKey);
+      const cachedValue = await this.redis.get(cacheKey);
+
+      if (cachedValue !== null) {
+        return cachedValue === 'true';
+      }
     } catch (redisErr: unknown) {
       const message = redisErr instanceof Error ? redisErr.message : String(redisErr);
       this.logger.warn(`Redis GET failed for key ${cacheKey}, falling back to DB: ${message}`);
-      cachedValue = null;
     }
-
-    if (cachedValue !== null) {
-      return cachedValue === 'true';
-    }
-
-    // Database Fallback
-    const featureFlag = await this.prisma.featureFlag.findUnique({
-      where: {
-        tenant_id_feature_key: {
-          tenant_id: tenantId,
-          feature_key: featureKey,
-        },
-      },
-    });
-
-    const isEnabled = featureFlag?.enabled ?? false;
 
     try {
-      await this.redis.set(cacheKey, isEnabled ? 'true' : 'false', 'EX', 300);
-    } catch (redisSetErr: unknown) {
-      const message = redisSetErr instanceof Error ? redisSetErr.message : String(redisSetErr);
-      this.logger.warn(`Redis SET failed for key ${cacheKey}: ${message}`);
-    }
+      // Database fallback when cache is unavailable or misses.
+      const featureFlag = await this.prisma.featureFlag.findUnique({
+        where: {
+          tenant_id_feature_key: {
+            tenant_id: tenantId,
+            feature_key: featureKey,
+          },
+        },
+      });
 
-    return isEnabled;
+      const isEnabled = featureFlag?.enabled ?? false;
+
+      try {
+        await this.redis.set(cacheKey, isEnabled ? 'true' : 'false', 'EX', 300);
+      } catch (redisSetErr: unknown) {
+        const message = redisSetErr instanceof Error ? redisSetErr.message : String(redisSetErr);
+        this.logger.warn(`Redis SET failed for key ${cacheKey}: ${message}`);
+      }
+
+      return isEnabled;
+    } catch (dbErr: unknown) {
+      const message = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      this.logger.error(
+        `Feature flag lookup failed for key ${cacheKey}, defaulting to disabled: ${message}`,
+      );
+      return false;
+    }
   }
 
   async toggleFeature(

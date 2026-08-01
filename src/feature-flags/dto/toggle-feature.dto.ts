@@ -1,7 +1,6 @@
-import { IsBoolean, IsNotEmpty } from 'class-validator';
+import { IsBoolean } from 'class-validator';
 
 export class ToggleFeatureDto {
   @IsBoolean()
-  @IsNotEmpty()
   enabled: boolean;
 }

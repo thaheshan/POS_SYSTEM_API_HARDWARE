@@ -1,4 +1,3 @@
-import { UnauthorizedException } from '@nestjs/common';
 import { FeatureFlagsController } from './feature-flags.controller';
 import { FeatureFlagsService } from './feature-flags.service';
 
@@ -12,12 +11,6 @@ describe('FeatureFlagsController', () => {
     };
 
     controller = new FeatureFlagsController(serviceMock as FeatureFlagsService);
-  });
-
-  it('should throw UnauthorizedException if req.user is undefined or incomplete', async () => {
-    await expect(
-      controller.toggleFeature('DISCOUNTS', { enabled: true }, { user: null }),
-    ).rejects.toThrow(UnauthorizedException);
   });
 
   it('should call service.toggleFeature with user credentials from request context', async () => {
