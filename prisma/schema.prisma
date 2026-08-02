@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 // ================= ENUMS =================
@@ -96,6 +96,12 @@ enum ContactStatus {
   REPLIED
 }
 
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+
 // ================= CORE / TENANT MODELS =================
 model User {
   user_id       String  @id @default(uuid())
@@ -135,6 +141,7 @@ model User {
   notifications     Notification[]      @relation("UserNotifications")
   role              Role?               @relation(fields: [role_id], references: [id])
   expenses          Expense[]
+  activityLogs      ActivityLog[]
 
   @@map("users")
 }
@@ -180,8 +187,25 @@ model Shop {
   roles              Role[]
   expenses           Expense[]
   subscriptionPayments SubscriptionPayment[]
+  activityLogs       ActivityLog[]
+  featureFlags       FeatureFlag[]
 
   @@map("shops")
+}
+
+// Per-tenant feature toggles (e.g. staged rollouts across shops)
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  tenant_id   String   @db.Uuid
+  feature_key String
+  enabled     Boolean  @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  shop Shop @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, feature_key], name: "tenant_id_feature_key")
+  @@map("feature_flags")
 }
 
 model SubscriptionPayment {
@@ -309,7 +333,14 @@ model Product {
   reorderQuantity     Decimal?     @map("reorder_quantity") @db.Decimal(10, 2)
   warrantyMonths      Int?         @map("warranty_months")
   hasVariants         Boolean      @default(false) @map("has_variants")
+  sellType            String       @default("FIX") @map("sell_type")
+  measurementUnit     String?      @map("measurement_unit")
   isActive            Boolean      @default(true) @map("is_active")
+  isDiscountEnabled   Boolean      @default(false) @map("is_discount_enabled")
+  discountType        DiscountType? @map("discount_type")
+  maxAllowedDiscount  Decimal?     @map("max_allowed_discount") @db.Decimal(10, 2)
+  defaultDiscountValue Decimal?    @map("default_discount_value") @db.Decimal(10, 2)
+  isDiscountApproved  Boolean      @default(false) @map("is_discount_approved")
   createdBy           String?      @map("created_by")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
@@ -791,4 +822,23 @@ model ContactMessage {
   updatedAt DateTime      @updatedAt @map("updated_at")
 
   @@map("contact_messages")
+}
+
+// ================= AUDIT LOGS =================
+model ActivityLog {
+  id         String   @id @default(uuid()) @map("activity_log_id") @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id")
+  userName   String   @map("user_name") @db.VarChar(150)
+  userRole   String   @map("user_role") @db.VarChar(50)
+  action     String   @db.VarChar(100)
+  details    String   @db.Text
+  amount     Float?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  shop Shop @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [user_id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("activity_logs")
 }

@@ -1,9 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 
 @Injectable()
 export class ExpensesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly activityLogsService: ActivityLogsService,
+  ) {}
 
   async create(tenantId: string, userId: string, data: any) {
     if (!data.amount || isNaN(Number(data.amount))) {
@@ -23,6 +27,14 @@ export class ExpensesService {
         status: 'COMPLETED',
       },
     });
+
+    await this.activityLogsService.log(
+      tenantId,
+      userId,
+      'ADD_EXPENSE',
+      `Logged ${expense.entryType} expense: ${expense.description}${expense.labourerName ? ' for ' + expense.labourerName : ''}`,
+      Number(expense.amount),
+    ).catch(() => {});
 
     return {
       success: true,

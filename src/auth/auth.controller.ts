@@ -75,6 +75,14 @@ export class AuthController {
     );
   }
 
+  @Post('password-reset-external')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password after external frontend validation' })
+  @ApiResponse({ status: 200, description: 'Password updated successfully' })
+  async resetPasswordExternal(@Body() body: { email: string; newPassword: string }) {
+    return this.authService.resetPasswordExternal(body.email, body.newPassword);
+  }
+
   @Get('check-status')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Poll registration approval status by email' })

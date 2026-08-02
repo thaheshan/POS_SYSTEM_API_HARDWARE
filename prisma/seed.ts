@@ -1,5 +1,6 @@
 import {
   PrismaClient,
+  MovementType,
   TaxCategory,
   SaleType,
   PaymentStatus,
@@ -96,20 +97,37 @@ async function main() {
     },
   });
 
-  // 4. Create or Find the OWNER Role
+  // Ensure standard roles exist
   let ownerRole = await prisma.role.findFirst({
-    where: { name: 'OWNER', tenant_id: shop.id },
+    where: { tenant_id: shop.id, name: 'OWNER' },
   });
-
   if (!ownerRole) {
     ownerRole = await prisma.role.create({
-      data: { name: 'OWNER', tenant_id: shop.id, permissions: {} },
+      data: {
+        name: 'OWNER',
+        tenant_id: shop.id,
+        permissions: { all: true },
+      },
     });
-    console.log(`Created role: ${ownerRole.name}`);
+    console.log(`Created role: OWNER`);
   }
 
-  // 5. Create or Update Owner User
-  const passwordHash = await bcrypt.hash(ownerPassword, 10);
+  let cashierRole = await prisma.role.findFirst({
+    where: { tenant_id: shop.id, name: 'CASHIER' },
+  });
+  if (!cashierRole) {
+    cashierRole = await prisma.role.create({
+      data: {
+        name: 'CASHIER',
+        tenant_id: shop.id,
+        permissions: { checkout: true },
+      },
+    });
+    console.log(`Created role: CASHIER`);
+  }
+
+  // Create Owner User
+  const passwordHash = await bcrypt.hash('Thaheshan0911@@', 10);
   const owner = await prisma.user.upsert({
     where: { email: ownerEmail },
     update: {
@@ -136,6 +154,35 @@ async function main() {
     },
   });
   console.log(`Owner ready: ${owner.email}`);
+
+  // Create Cashier User
+  const cashierPasswordHash = await bcrypt.hash('SecurePass@2026', 10);
+  const cashier = await prisma.user.upsert({
+    where: { email: 'cashier@test.com' },
+    update: {
+      password_hash: cashierPasswordHash,
+      tenant_id: shop.id,
+      role_id: cashierRole.id,
+      first_name: 'Cashier',
+      last_name: 'User',
+      is_active: true,
+      is_verified: true,
+      status: 'APPROVED',
+    },
+    create: {
+      email: 'cashier@test.com',
+      password_hash: cashierPasswordHash,
+      tenant_id: shop.id,
+      first_name: 'Cashier',
+      last_name: 'User',
+      phone: '+94770000002',
+      role_id: cashierRole.id,
+      is_active: true,
+      is_verified: true,
+      status: 'APPROVED',
+    },
+  });
+  console.log(`Created cashier: ${cashier.email}`);
 
   // Categories (ADAPTED: Category model uses name field instead of categoryName)
   const categoriesData = [
@@ -333,6 +380,7 @@ async function main() {
     // Initial Stock
     const qty = randomInt(10, 100);
     if (qty < 15) {
+      // Force some low stock
       await prisma.stock.create({
         data: {
           tenantId: shop.id,
@@ -378,6 +426,8 @@ async function main() {
   startDate.setMonth(startDate.getMonth() - 3);
 
   let invoiceCount = 0;
+
+  // Roughly 3 sales per day over 90 days = ~270 sales
   const days = 90;
 
   for (let d = 0; d < days; d++) {
