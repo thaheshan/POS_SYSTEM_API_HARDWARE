@@ -399,6 +399,8 @@ export class SalesService {
             productId: item.productId,
             quantity: item.quantity,
             unitPrice,
+            discountAmount: appliedDiscount > 0 ? appliedDiscount : 0,
+            discountPercentage: appliedDiscount > 0 ? Number(((appliedDiscount / regularPrice) * 100).toFixed(2)) : 0,
             lineTotal,
             taxRate,
             taxAmount,
