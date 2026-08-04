@@ -115,7 +115,7 @@ describe('AnalyticsService', () => {
 
     const result = await service.generateWeeklyReport('tenant-1', {
       week_start: '2026-05-11',
-    } as WeeklyReportInput);
+    });
 
     expect(result).toEqual(cachedReport);
     expect(prismaMock.generatedReport.create).not.toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe('AnalyticsService', () => {
     const before = new Date();
     const result = await service.generateWeeklyReport('tenant-1', {
       week_start: '2026-05-11',
-    } as WeeklyReportInput);
+    });
     const after = new Date();
 
     expect(result.tenantId).toBe('tenant-1');
@@ -172,7 +172,7 @@ describe('AnalyticsService', () => {
     await expect(
       service.generateWeeklyReport('tenant-1', {
         week_start: '2026-05-11',
-      } as WeeklyReportInput),
+      }),
     ).rejects.toBeInstanceOf(HttpException);
   });
 
@@ -188,7 +188,7 @@ describe('AnalyticsService', () => {
     await expect(
       service.generateWeeklyReport('tenant-1', {
         week_start: '2026-05-11',
-      } as WeeklyReportInput),
+      }),
     ).rejects.toBeInstanceOf(HttpException);
   });
 });

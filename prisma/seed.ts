@@ -6,7 +6,10 @@ import {
   PaymentStatus,
   InvoiceStatus,
   SubscriptionPaymentStatus,
+  StaffStatus,
+  Product,
 } from '@prisma/client';
+
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
@@ -33,30 +36,59 @@ function randomInt(min: number, max: number) {
 async function main() {
   console.log('Starting seed...');
 
-  // Create Shop
-  const shop = await prisma.shop.create({
-    data: {
-      name: 'FUTURA HARDWARE',
-      businessRegistration: 'BR-12345',
-      email: 'thaheshanhamsu@gmail.com',
-      subscriptionPlan: 'PRO',
-      paymentStatus: SubscriptionPaymentStatus.PAID,
-    },
-  });
-  console.log(`Created shop: ${shop.name}`);
+  if (!process.env.SEED_OWNER_PASSWORD) {
+    throw new Error(
+      'SEED_OWNER_PASSWORD environment variable is required for seeding!',
+    );
+  }
 
-  // Create Branch
-  const branch = await prisma.branch.create({
-    data: {
+  if (!process.env.SEED_OWNER_EMAIL) {
+    throw new Error(
+      'SEED_OWNER_EMAIL environment variable is required for seeding!',
+    );
+  }
+
+  // Pull secure credentials from environment variables
+  const ownerEmail = process.env.SEED_OWNER_EMAIL;
+  const ownerPassword = process.env.SEED_OWNER_PASSWORD;
+
+  // 1. Create or Find Shop (findFirst fallback because Shop lacks a unique constraint)
+  let shop = await prisma.shop.findFirst({
+    where: { name: 'FUTURA HARDWARE' },
+  });
+
+  if (!shop) {
+    shop = await prisma.shop.create({
+      data: {
+        name: 'FUTURA HARDWARE',
+        businessRegistration: 'BR-12345',
+        email: ownerEmail,
+        subscriptionPlan: 'PRO',
+        paymentStatus: SubscriptionPaymentStatus.PAID,
+      },
+    });
+    console.log(`Created shop: ${shop.name}`);
+  } else {
+    console.log(`Found existing shop: ${shop.name}`);
+  }
+
+  // 2. Create or Update Branch (upsert using unique code)
+  const branch = await prisma.branch.upsert({
+    where: { code: 'MB-001' },
+    update: { tenantId: shop.id, name: 'Main Branch' },
+    create: { tenantId: shop.id, name: 'Main Branch', code: 'MB-001' },
+  });
+
+  // 3. Create or Update Warehouse (upsert using unique code)
+  const warehouse = await prisma.warehouse.upsert({
+    where: { code: 'WH-001' },
+    update: {
       tenantId: shop.id,
-      name: 'Main Branch',
-      code: 'MB-001',
+      branchId: branch.id,
+      name: 'Main Store',
+      address: '123 Main Street',
     },
-  });
-
-  // Create Warehouse
-  const warehouse = await prisma.warehouse.create({
-    data: {
+    create: {
       tenantId: shop.id,
       branchId: branch.id,
       name: 'Main Store',
@@ -95,33 +127,33 @@ async function main() {
   }
 
   // Create Owner User
-  const passwordHash = await bcrypt.hash('Thaheshan0911@@', 10);
+  const passwordHash = await bcrypt.hash(ownerPassword, 10);
   const owner = await prisma.user.upsert({
-    where: { email: 'thaheshanhamsu@gmail.com' },
+    where: { email: ownerEmail },
     update: {
       password_hash: passwordHash,
       tenant_id: shop.id,
       role_id: ownerRole.id,
-      first_name: 'suresh',
-      last_name: 'somashantha thaheshan',
+      first_name: 'System',
+      last_name: 'Owner',
       is_active: true,
       is_verified: true,
-      status: 'APPROVED',
+      status: StaffStatus.APPROVED,
     },
     create: {
-      email: 'thaheshanhamsu@gmail.com',
+      email: ownerEmail,
       password_hash: passwordHash,
       tenant_id: shop.id,
-      first_name: 'suresh',
-      last_name: 'somashantha thaheshan',
+      first_name: 'System',
+      last_name: 'Owner',
       phone: '+94770000000',
       role_id: ownerRole.id,
       is_active: true,
       is_verified: true,
-      status: 'APPROVED',
+      status: StaffStatus.APPROVED,
     },
   });
-  console.log(`Created owner: ${owner.email}`);
+  console.log(`Owner ready: ${owner.email}`);
 
   // Create Cashier User
   const cashierPasswordHash = await bcrypt.hash('SecurePass@2026', 10);
@@ -152,7 +184,7 @@ async function main() {
   });
   console.log(`Created cashier: ${cashier.email}`);
 
-  // Categories
+  // Categories (ADAPTED: Category model uses name field instead of categoryName)
   const categoriesData = [
     'Cement',
     'Steel',
@@ -164,12 +196,15 @@ async function main() {
   const categories: Record<string, string> = {};
   for (const catName of categoriesData) {
     const cat = await prisma.category.create({
-      data: { tenantId: shop.id, name: catName },
+      data: {
+        tenantId: shop.id,
+        name: catName,
+      },
     });
     categories[catName] = cat.id;
   }
 
-  // Brands
+  // Brands (ADAPTED: Brand model uses name field instead of brandName)
   const brandsData = [
     'Holcim',
     'Tokyo Super',
@@ -185,7 +220,7 @@ async function main() {
     brands[brandName] = brand.id;
   }
 
-  // Units
+  // Units (ADAPTED: Unit model uses name and abbreviation fields instead of unitName and unitCode)
   const unitsData = [
     { name: 'Kilogram', abbr: 'kg' },
     { name: 'Piece', abbr: 'pcs' },
@@ -322,7 +357,7 @@ async function main() {
     },
   ];
 
-  const createdProducts = [];
+  const createdProducts: Product[] = [];
   for (const pd of productsData) {
     const p = await prisma.product.create({
       data: {
@@ -372,7 +407,7 @@ async function main() {
   console.log(`Created ${createdProducts.length} products with stock.`);
 
   // Customers
-  const customers = [];
+  const customers: any[] = [];
   for (let i = 1; i <= 15; i++) {
     const c = await prisma.customer.create({
       data: {
@@ -394,6 +429,7 @@ async function main() {
 
   // Roughly 3 sales per day over 90 days = ~270 sales
   const days = 90;
+
   for (let d = 0; d < days; d++) {
     const currentDay = new Date(startDate);
     currentDay.setDate(startDate.getDate() + d);
@@ -407,7 +443,7 @@ async function main() {
       let subtotal = 0;
       const invoiceNumber = `INV-${d}-${s}-${randomInt(1000, 9999)}`;
 
-      const itemsData = [];
+      const itemsData: any[] = [];
       for (let i = 0; i < numItems; i++) {
         const prod = createdProducts[randomInt(0, createdProducts.length - 1)];
         const qty = randomInt(1, 5);
@@ -465,4 +501,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });
