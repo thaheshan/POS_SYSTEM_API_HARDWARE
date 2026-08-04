@@ -127,7 +127,7 @@ async function main() {
   }
 
   // Create Owner User
-  const passwordHash = await bcrypt.hash('Thaheshan0911@@', 10);
+  const passwordHash = await bcrypt.hash(ownerPassword, 10);
   const owner = await prisma.user.upsert({
     where: { email: ownerEmail },
     update: {

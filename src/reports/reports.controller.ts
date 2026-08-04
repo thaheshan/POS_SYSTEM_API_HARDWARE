@@ -48,7 +48,17 @@ export class ReportsController {
 
     let targetUrl = `${frontendBaseUrl}/reports/preview/${type}`;
     if (id) {
-      targetUrl += `?id=${id}`;
+      const isValidId =
+        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+          id,
+        ) || /^\d+$/.test(id);
+
+      if (!isValidId) {
+        throw new BadRequestException(
+          'Invalid id parameter. Must be a valid UUID or numeric ID.',
+        );
+      }
+      targetUrl += `?id=${encodeURIComponent(id)}`;
     }
 
     try {

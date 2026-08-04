@@ -72,7 +72,8 @@ export class FeatureFlagsService {
       select: { role: true, is_active: true },
     });
 
-    if (!dbUser || !dbUser.is_active || (dbUser.role !== 'owner' && dbUser.role !== 'manager')) {
+    const roleName = dbUser?.role?.name?.toLowerCase();
+    if (!dbUser || !dbUser.is_active || (roleName !== 'owner' && roleName !== 'manager')) {
       throw new ForbiddenException('Only owner or manager can toggle features');
     }
 
