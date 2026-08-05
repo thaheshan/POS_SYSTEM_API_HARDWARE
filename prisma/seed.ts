@@ -1,5 +1,6 @@
 import {
   PrismaClient,
+  MovementType,
   TaxCategory,
   SaleType,
   PaymentStatus,
@@ -9,6 +10,7 @@ import {
   Role,
   Product,
   Customer,
+  SubscriptionPaymentStatus,
 } from '@prisma/client';
 
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -28,6 +30,12 @@ const pool = new Pool({
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
+function randomDate(start: Date, end: Date) {
+  return new Date(
+    start.getTime() + Math.random() * (end.getTime() - start.getTime()),
+  );
+}
+
 function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -40,14 +48,26 @@ async function main() {
   // -----------------------------
   const ownerEmail = process.env.SEED_OWNER_EMAIL || 'owner@example.com';
   let ownerPassword = process.env.SEED_OWNER_PASSWORD;
+  
   if (!ownerPassword) {
     ownerPassword = crypto.randomBytes(12).toString('hex') + 'A1!';
     console.log(
       `[SEED] SEED_OWNER_PASSWORD not set. Generated random password: ${ownerPassword}`,
     );
   }
-
   const passwordHash = await bcrypt.hash(ownerPassword, 10);
+
+  // Secure cashier credentials
+  const cashierEmail = process.env.SEED_CASHIER_EMAIL || 'cashier@test.com';
+  let cashierPassword = process.env.SEED_CASHIER_PASSWORD;
+  
+  if (!cashierPassword) {
+    cashierPassword = crypto.randomBytes(12).toString('hex') + 'C1!';
+    console.log(
+      `[SEED] SEED_CASHIER_PASSWORD not set. Generated random password: ${cashierPassword}`,
+    );
+  }
+  const cashierPasswordHash = await bcrypt.hash(cashierPassword, 10);
 
   // -----------------------------
   // SHOP (findFirst + create)
@@ -97,11 +117,10 @@ async function main() {
   });
 
   // -----------------------------
-  // ROLE (upsert)
+  // ROLES (upsert)
   // -----------------------------
   const ownerRole = await prisma.role.upsert({
     where: {
-      // Composite unique does NOT exist in schema, so we use idempotent fallback:
       id:
         (
           await prisma.role.findFirst({
@@ -113,12 +132,31 @@ async function main() {
     create: {
       name: 'OWNER',
       tenant_id: shop.id,
-      permissions: {},
+      permissions: { all: true },
     },
   });
+  console.log(`Created role: OWNER`);
+
+  const cashierRole = await prisma.role.upsert({
+    where: {
+      id:
+        (
+          await prisma.role.findFirst({
+            where: { name: 'CASHIER', tenant_id: shop.id },
+          })
+        )?.id ?? '00000000-0000-0000-0000-000000000000',
+    },
+    update: {},
+    create: {
+      name: 'CASHIER',
+      tenant_id: shop.id,
+      permissions: { checkout: true },
+    },
+  });
+  console.log(`Created role: CASHIER`);
 
   // -----------------------------
-  // OWNER USER (upsert)
+  // USERS (upsert)
   // -----------------------------
   const owner = await prisma.user.upsert({
     where: { email: ownerEmail },
@@ -145,8 +183,34 @@ async function main() {
       status: StaffStatus.APPROVED,
     },
   });
-
   console.log(`Owner ready: ${owner.email}`);
+
+  const cashier = await prisma.user.upsert({
+    where: { email: cashierEmail },
+    update: {
+      password_hash: cashierPasswordHash,
+      tenant_id: shop.id,
+      role_id: cashierRole.id,
+      first_name: 'Cashier',
+      last_name: 'User',
+      is_active: true,
+      is_verified: true,
+      status: StaffStatus.APPROVED,
+    },
+    create: {
+      email: cashierEmail,
+      password_hash: cashierPasswordHash,
+      tenant_id: shop.id,
+      first_name: 'Cashier',
+      last_name: 'User',
+      phone: '+94770000002',
+      role_id: cashierRole.id,
+      is_active: true,
+      is_verified: true,
+      status: StaffStatus.APPROVED,
+    },
+  });
+  console.log(`Created cashier: ${cashier.email}`);
 
   // -----------------------------
   // CATEGORIES (create only)

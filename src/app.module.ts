@@ -1,13 +1,15 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
+import { RedisModule } from './redis/redis.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { ReportsModule } from './reports/reports.module';
 import { InventoryModule } from './inventory/inventory.module';
-import { ScheduleModule } from '@nestjs/schedule';
 import { StaffModule } from './staff/staff.module';
 import { AdminModule } from './admin/admin.module';
 import { TokenLoggerMiddleware } from './common/middleware/token-logger.middleware';
@@ -21,6 +23,8 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { ShopsModule } from './shops/shops.module';
 import { ContactModule } from './contact/contact.module';
 import { ActivityLogsModule } from './activity-logs/activity-logs.module';
+import { SmsModule } from './sms/sms.module';
+import { WarehousesModule } from './warehouses/warehouses.module';
 
 @Module({
   imports: [
@@ -30,6 +34,8 @@ import { ActivityLogsModule } from './activity-logs/activity-logs.module';
     PrismaModule,
     SystemModule,
     AuthModule,
+    RedisModule,
+    FeatureFlagsModule,
     ReportsModule,
     InventoryModule,
     ScheduleModule.forRoot(),
@@ -45,6 +51,8 @@ import { ActivityLogsModule } from './activity-logs/activity-logs.module';
     ShopsModule,
     ContactModule,
     ActivityLogsModule,
+    SmsModule,
+    WarehousesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

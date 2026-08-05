@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 // ================= ENUMS =================
@@ -96,6 +96,12 @@ enum ContactStatus {
   REPLIED
 }
 
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+
 // ================= CORE / TENANT MODELS =================
 model User {
   user_id       String  @id @default(uuid())
@@ -182,8 +188,24 @@ model Shop {
   expenses           Expense[]
   subscriptionPayments SubscriptionPayment[]
   activityLogs       ActivityLog[]
+  featureFlags       FeatureFlag[]
 
   @@map("shops")
+}
+
+// Per-tenant feature toggles (e.g. staged rollouts across shops)
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  tenant_id   String   @db.Uuid
+  feature_key String
+  enabled     Boolean  @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  shop Shop @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, feature_key], name: "tenant_id_feature_key")
+  @@map("feature_flags")
 }
 
 model SubscriptionPayment {
@@ -314,6 +336,11 @@ model Product {
   sellType            String       @default("FIX") @map("sell_type")
   measurementUnit     String?      @map("measurement_unit")
   isActive            Boolean      @default(true) @map("is_active")
+  isDiscountEnabled   Boolean      @default(false) @map("is_discount_enabled")
+  discountType        DiscountType? @map("discount_type")
+  maxAllowedDiscount  Decimal?     @map("max_allowed_discount") @db.Decimal(10, 2)
+  defaultDiscountValue Decimal?    @map("default_discount_value") @db.Decimal(10, 2)
+  isDiscountApproved  Boolean      @default(false) @map("is_discount_approved")
   createdBy           String?      @map("created_by")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")

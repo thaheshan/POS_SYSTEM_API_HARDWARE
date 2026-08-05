@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateCheckoutDto } from './dto/create-checkout.dto';
 
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { SmsService } from '../sms/sms.service';
 
 @Injectable()
 export class SalesService {
@@ -11,6 +12,7 @@ export class SalesService {
   constructor(
     private prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
+    private readonly smsService: SmsService,
   ) {}
 
   async getSales(tenantId: string, query: any) {
@@ -40,45 +42,48 @@ export class SalesService {
       this.prisma.salesInvoice.findMany({
         where,
         include: {
-          customer: { select: { name: true } }
+          customer: { select: { name: true } },
         },
         orderBy: { createdAt: 'desc' },
         take: limit,
-        skip
+        skip,
       }),
-      this.prisma.salesInvoice.count({ where })
+      this.prisma.salesInvoice.count({ where }),
     ]);
 
     return {
       status: 'success',
       data: {
-        items: invoices.map(inv => ({
+        items: invoices.map((inv) => ({
           ...inv,
-          totalAmount: Number(inv.totalAmount)
+          totalAmount: Number(inv.totalAmount),
         })),
         total,
         page,
-        limit
-      }
+        limit,
+      },
     };
   }
 
   async getSaleById(tenantId: string, id: string) {
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        id,
+      );
 
     const invoice = await this.prisma.salesInvoice.findFirst({
       where: {
         tenantId,
-        ...(isUuid ? { id } : { invoiceNumber: id })
+        ...(isUuid ? { id } : { invoiceNumber: id }),
       },
       include: {
         customer: { select: { name: true, phone: true } },
         items: {
           include: {
-            product: { select: { name: true, sku: true, sellingPrice: true } }
-          }
-        }
-      }
+            product: { select: { name: true, sku: true, sellingPrice: true } },
+          },
+        },
+      },
     });
 
     if (!invoice) {
@@ -98,20 +103,23 @@ export class SalesService {
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
           lineTotal: Number(item.lineTotal),
-          taxAmount: Number(item.taxAmount)
-        }))
-      }
+          taxAmount: Number(item.taxAmount),
+        })),
+      },
     };
   }
 
   async updateSale(tenantId: string, id: string, data: any) {
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        id,
+      );
     const invoice = await this.prisma.salesInvoice.findFirst({
       where: {
         tenantId,
-        ...(isUuid ? { id } : { invoiceNumber: id })
+        ...(isUuid ? { id } : { invoiceNumber: id }),
       },
-      include: { items: true }
+      include: { items: true },
     });
 
     if (!invoice) {
@@ -124,9 +132,11 @@ export class SalesService {
         await tx.customer.update({
           where: { id: invoice.customerId },
           data: {
-            name: data.customerName !== undefined ? data.customerName : undefined,
-            phone: data.customerPhone !== undefined ? data.customerPhone : undefined
-          }
+            name:
+              data.customerName !== undefined ? data.customerName : undefined,
+            phone:
+              data.customerPhone !== undefined ? data.customerPhone : undefined,
+          },
         });
       }
 
@@ -136,7 +146,7 @@ export class SalesService {
       // 2. If new items are provided, replace the old items
       if (data.items && Array.isArray(data.items)) {
         await tx.salesInvoiceItem.deleteMany({
-          where: { invoiceId: invoice.id }
+          where: { invoiceId: invoice.id },
         });
 
         newSubtotal = 0;
@@ -145,7 +155,7 @@ export class SalesService {
 
         for (const it of data.items) {
           const product = await tx.product.findFirst({
-            where: { id: it.productId, tenantId }
+            where: { id: it.productId, tenantId },
           });
 
           if (!product) continue;
@@ -154,9 +164,9 @@ export class SalesService {
           const qty = Number(it.quantity ?? 1);
           const lineTotal = unitPrice * qty;
           const taxRate = Number(product.taxRate ?? 0);
-          
+
           // Tax Inclusive Calculation: Extract tax from the sticker price
-          const basePrice = lineTotal / (1 + (taxRate / 100));
+          const basePrice = lineTotal / (1 + taxRate / 100);
           const taxAmount = lineTotal - basePrice;
 
           newSubtotal += lineTotal;
@@ -189,13 +199,19 @@ export class SalesService {
 
         if (lineItems.length > 0) {
           await tx.salesInvoiceItem.createMany({
-            data: lineItems.map((li: any) => ({ ...li, invoiceId: invoice.id }))
+            data: lineItems.map((li: any) => ({
+              ...li,
+              invoiceId: invoice.id,
+            })),
           });
         }
       }
 
       // 3. Update the main invoice record
-      const discount = data.discount !== undefined ? Number(data.discount) : Number(invoice.discountAmount);
+      const discount =
+        data.discount !== undefined
+          ? Number(data.discount)
+          : Number(invoice.discountAmount);
       // Total amount is simply Subtotal minus discount. Tax is already included inside the Subtotal.
       const totalAmount = newSubtotal - discount;
 
@@ -206,24 +222,27 @@ export class SalesService {
           discountAmount: discount,
           subtotal: newSubtotal,
           taxAmount: newTax,
-          totalAmount: totalAmount
-        }
+          totalAmount: totalAmount,
+        },
       });
 
       return {
         success: true,
-        message: 'Invoice updated successfully'
+        message: 'Invoice updated successfully',
       };
     });
   }
 
   async deleteSale(tenantId: string, id: string) {
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        id,
+      );
     const invoice = await this.prisma.salesInvoice.findFirst({
       where: {
         tenantId,
-        ...(isUuid ? { id } : { invoiceNumber: id })
-      }
+        ...(isUuid ? { id } : { invoiceNumber: id }),
+      },
     });
 
     if (!invoice) {
@@ -233,26 +252,30 @@ export class SalesService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.salesInvoiceItem.deleteMany({
-          where: { invoiceId: invoice.id }
+          where: { invoiceId: invoice.id },
         });
 
         await tx.salesInvoice.delete({
-          where: { id: invoice.id }
+          where: { id: invoice.id },
         });
 
         return {
           success: true,
-          message: 'Invoice permanently deleted'
+          message: 'Invoice permanently deleted',
         };
       });
     } catch (error) {
       this.logger.error(`Failed to delete invoice ${invoice.id}:`, error);
-      throw new BadRequestException('Failed to delete invoice because of related records or database error. Check backend console.');
+      throw new BadRequestException(
+        'Failed to delete invoice because of related records or database error. Check backend console.',
+      );
     }
   }
 
   async checkout(dto: CreateCheckoutDto, tenantId: string, userId: string) {
-    this.logger.log(`Processing POS checkout for tenant=${tenantId}, items=${dto.items.length}`);
+    this.logger.log(
+      `Processing POS checkout for tenant=${tenantId}, items=${dto.items.length}`,
+    );
 
     let transactionResult: any;
 
@@ -268,12 +291,50 @@ export class SalesService {
             where: { id: item.productId, tenantId },
           });
           if (!product) {
-            throw new BadRequestException(`Product ${item.productId} not found`);
+            throw new BadRequestException(
+              `Product ${item.productId} not found`,
+            );
           }
 
           const unitPrice = item.unitPrice ?? Number(product.sellingPrice);
-          const lineTotal = unitPrice * item.quantity;
-          subtotal += lineTotal;
+          if (unitPrice < 0) {
+            throw new BadRequestException(
+              `Unit price cannot be negative for product "${product.name}"`,
+            );
+          }
+
+          // Enforce backend validation of discount limit
+          const regularPrice = Number(product.sellingPrice);
+          const appliedDiscount = regularPrice - unitPrice;
+
+          if (appliedDiscount > 0.01) {
+            if (!product.isDiscountEnabled || !product.isDiscountApproved) {
+              throw new BadRequestException(
+                `Discounts are not enabled or approved for product "${product.name}"`,
+              );
+            }
+
+            let maxAllowedAmount = 0;
+            const maxAllowedDiscount = Number(product.maxAllowedDiscount ?? 0);
+            if (product.discountType === 'PERCENTAGE') {
+              maxAllowedAmount = (regularPrice * maxAllowedDiscount) / 100;
+            } else {
+              maxAllowedAmount = maxAllowedDiscount;
+            }
+
+            if (appliedDiscount - maxAllowedAmount > 0.01) {
+              const formattedLimit =
+                product.discountType === 'PERCENTAGE'
+                  ? `${maxAllowedDiscount}%`
+                  : `Rs. ${maxAllowedDiscount}`;
+              throw new BadRequestException(
+                `Applied discount of Rs. ${appliedDiscount.toFixed(2)} on product "${product.name}" exceeds the maximum allowed limit of ${formattedLimit}`,
+              );
+            }
+          }
+
+          const lineTotal = Number((unitPrice * item.quantity).toFixed(2));
+          subtotal = Number((subtotal + lineTotal).toFixed(2));
 
           const stockRecord = await tx.stock.findFirst({
             where: {
@@ -284,14 +345,17 @@ export class SalesService {
           });
 
           if (!stockRecord) {
-            throw new BadRequestException(`No stock record found for product "${product.name}"`);
+            throw new BadRequestException(
+              `No stock record found for product "${product.name}"`,
+            );
           }
 
           if (!resolvedBranchId) {
             resolvedBranchId = stockRecord.branchId;
           }
 
-          const available = Number(stockRecord.quantity) - Number(stockRecord.reservedQuantity);
+          const available =
+            Number(stockRecord.quantity) - Number(stockRecord.reservedQuantity);
           if (available < item.quantity) {
             throw new BadRequestException(
               `Insufficient stock for "${product.name}". Available: ${available}, Requested: ${item.quantity}`,
@@ -320,17 +384,23 @@ export class SalesService {
           });
 
           const purchasePrice = Number(product.purchasePrice ?? 0);
-          const costPriceTotal = purchasePrice * item.quantity;
-          const profit = lineTotal - costPriceTotal;
+          const costPriceTotal = Number(
+            (purchasePrice * item.quantity).toFixed(2),
+          );
+          const profit = Number((lineTotal - costPriceTotal).toFixed(2));
 
           const taxRate = Number(product.taxRate ?? 0);
-          const basePrice = lineTotal / (1 + (taxRate / 100));
-          const taxAmount = lineTotal - basePrice;
+          const basePrice = Number(
+            (lineTotal / (1 + taxRate / 100)).toFixed(2),
+          );
+          const taxAmount = Number((lineTotal - basePrice).toFixed(2));
 
           lineItems.push({
             productId: item.productId,
             quantity: item.quantity,
             unitPrice,
+            discountAmount: appliedDiscount > 0 ? appliedDiscount : 0,
+            discountPercentage: appliedDiscount > 0 ? Number(((appliedDiscount / regularPrice) * 100).toFixed(2)) : 0,
             lineTotal,
             taxRate,
             taxAmount,
@@ -342,9 +412,13 @@ export class SalesService {
 
         // Fallback branchId
         if (!resolvedBranchId) {
-          const firstBranch = await tx.branch.findFirst({ where: { tenantId } });
+          const firstBranch = await tx.branch.findFirst({
+            where: { tenantId },
+          });
           if (!firstBranch) {
-            throw new BadRequestException('No branch found for this tenant. Please create a branch first.');
+            throw new BadRequestException(
+              'No branch found for this tenant. Please create a branch first.',
+            );
           }
           resolvedBranchId = firstBranch.id;
         }
@@ -353,15 +427,23 @@ export class SalesService {
 
         // --- 2. Calculate totals ---
         const discount = dto.discount ?? 0;
-        const afterDiscount = subtotal - discount;
-        const taxAmount = lineItems.reduce((sum, li) => sum + Number(li.taxAmount), 0);
-        
-        // Total amount is simply Subtotal minus discount. Tax is already included inside the Subtotal.
-        const totalAmount = afterDiscount;
+        const totalAmount = Number((subtotal - discount).toFixed(2));
+        if (totalAmount < 0) {
+          throw new BadRequestException(
+            `Grand total after discounts cannot be negative (calculated total: Rs. ${totalAmount})`,
+          );
+        }
+        const taxAmount = Number(
+          lineItems
+            .reduce((sum, li) => sum + Number(li.taxAmount), 0)
+            .toFixed(2),
+        );
 
         // --- 3. Create Sales Invoice ---
         const timestamp = Date.now().toString(); // Use full timestamp
-        const randomPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        const randomPart = Math.floor(Math.random() * 10000)
+          .toString()
+          .padStart(4, '0');
         const invoiceNumber = `INV-${new Date().getFullYear()}-${timestamp}-${randomPart}`;
         const now = new Date();
 
@@ -401,13 +483,16 @@ export class SalesService {
 
         // --- Update Customer Totals ---
         if (dto.customerId) {
-          const balanceAddition = Math.max(0, totalAmount - (dto.paidAmount ?? totalAmount));
+          const balanceAddition = Math.max(
+            0,
+            totalAmount - (dto.paidAmount ?? totalAmount),
+          );
           await tx.customer.update({
             where: { id: dto.customerId },
             data: {
               totalPurchases: { increment: totalAmount },
-              outstandingBalance: { increment: balanceAddition }
-            }
+              outstandingBalance: { increment: balanceAddition },
+            },
           });
         }
 
@@ -425,22 +510,26 @@ export class SalesService {
       this.logger.error('CHECKOUT FAILED:', error?.message || error);
       // Re-throw known business exceptions as-is; wrap unknown DB errors
       if (error instanceof BadRequestException) throw error;
-      throw new BadRequestException(`Checkout failed: ${error?.message || 'Unknown database error. Check backend logs.'}`);
+      throw new BadRequestException(
+        `Checkout failed: ${error?.message || 'Unknown database error. Check backend logs.'}`,
+      );
     }
 
     // --- 4. Fire notification AFTER transaction (non-blocking, won't fail checkout) ---
-    this.prisma.notification.create({
-      data: {
-        tenantId,
-        userId,
-        title: 'Sale Completed',
-        message: `Invoice ${transactionResult.invoiceNumber} for LKR ${Number(transactionResult.totalAmount).toLocaleString()} was processed successfully.`,
-        type: 'SUCCESS',
-        link: '/sales',
-      },
-    }).catch((err) => {
-      this.logger.warn('Failed to create sale notification: ' + err.message);
-    });
+    this.prisma.notification
+      .create({
+        data: {
+          tenantId,
+          userId,
+          title: 'Sale Completed',
+          message: `Invoice ${transactionResult.invoiceNumber} for LKR ${Number(transactionResult.totalAmount).toLocaleString()} was processed successfully.`,
+          type: 'SUCCESS',
+          link: '/sales',
+        },
+      })
+      .catch((err) => {
+        this.logger.warn('Failed to create sale notification: ' + err.message);
+      });
 
     // Write Activity Log
     await this.activityLogsService.log(
@@ -448,8 +537,44 @@ export class SalesService {
       userId,
       'CREATE_SALE',
       `Processed checkout for Invoice ${transactionResult.invoiceNumber}. Total: Rs. ${transactionResult.totalAmount}`,
-      transactionResult.totalAmount,
-    ).catch(() => {});
+    );
+
+    // Send SMS Receipt (fire-and-forget — never blocks checkout)
+    require('fs').appendFileSync(
+      'sms-debug.txt',
+      `\n[CHECKOUT END] dto.customerId: ${dto.customerId}\n`,
+    );
+    if (dto.customerId) {
+      this.logger.log(
+        `[SMS] Customer ID found (${dto.customerId}) — fetching phone for receipt SMS`,
+      );
+      this.prisma.customer
+        .findUnique({ where: { id: dto.customerId } })
+        .then((customer) => {
+          require('fs').appendFileSync(
+            'sms-debug.txt',
+            `[DB FETCH] Customer found: ${!!customer}, Phone: ${customer?.phone}\n`,
+          );
+          if (customer?.phone) {
+            this.logger.log(
+              `[SMS] Phone found: ${customer.phone} — dispatching SMS`,
+            );
+            this.smsService.sendReceiptSMS(
+              customer.phone,
+              transactionResult.invoiceId,
+            );
+          } else {
+            this.logger.warn(
+              `[SMS] Customer ${dto.customerId} has no phone number — skipping SMS`,
+            );
+          }
+        })
+        .catch((err) =>
+          this.logger.error('[SMS] Failed to fetch customer for SMS', err),
+        );
+    } else {
+      this.logger.log('[SMS] No customerId in payload — skipping SMS');
+    }
 
     return transactionResult;
   }

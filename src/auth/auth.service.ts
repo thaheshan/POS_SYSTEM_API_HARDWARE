@@ -497,7 +497,8 @@ export class AuthService {
         error instanceof UnauthorizedException ||
         error instanceof InactiveUserException ||
         error instanceof UnverifiedUserException ||
-        error instanceof LockedAccountException
+        error instanceof LockedAccountException ||
+        error instanceof HttpException
       ) {
         throw error;
       }

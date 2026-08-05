@@ -13,8 +13,11 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { Roles } from 'src/auth/decorators/roles.decorator';
 import type { JwtPayload } from 'src/auth/interfaces/jwt-payload.interface';
 import { AddStockDto, DeductStockDto } from './dto/stock_manual.dto';
+import { TransferStockDto } from './dto/transfer-stock.dto';
 import { StockService } from './stock.service';
 import { GetStockFilterDto } from './dto/get-stock-filter.dto';
 import {
@@ -136,6 +139,24 @@ export class StockController {
   ) {
     return this.stockService.deductManualStock(
       deductStockDto,
+      req.user.sub,
+      req.user.tenant_id,
+    );
+  }
+
+  @Post('transfer')
+  @HttpCode(HttpStatus.OK)
+  @Roles('OWNER', 'ADMIN') // Allow OWNER and ADMIN
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Transfer stock between warehouses' })
+  @ApiResponse({ status: 200, description: 'Stock transferred successfully' })
+  @ApiResponse({ status: 400, description: 'Insufficient stock or invalid warehouses' })
+  async transferStock(
+    @Body() transferStockDto: TransferStockDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.stockService.transferStock(
+      transferStockDto,
       req.user.sub,
       req.user.tenant_id,
     );

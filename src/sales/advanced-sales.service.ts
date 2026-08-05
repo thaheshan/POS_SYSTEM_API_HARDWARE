@@ -11,6 +11,7 @@ import {
 } from './dto/advanced-sales.dto';
 
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { SmsService } from '../sms/sms.service';
 
 @Injectable()
 export class AdvancedSalesService {
@@ -19,6 +20,7 @@ export class AdvancedSalesService {
   constructor(
     private prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
+    private readonly smsService: SmsService,
   ) {}
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -243,6 +245,16 @@ export class AdvancedSalesService {
       `Processed return ${result.returnNumber} for Invoice ${invoice.invoiceNumber}. Reason: ${dto.reason}`,
       result.totalRefund,
     );
+
+    if (invoice.customerId) {
+      this.prisma.customer.findUnique({ where: { id: invoice.customerId } })
+        .then(customer => {
+          if (customer?.phone) {
+            this.smsService.sendReceiptSMS(customer.phone, invoice.id);
+          }
+        })
+        .catch(err => this.logger.error('Failed to fetch customer for SMS', err));
+    }
 
     return result;
   }
@@ -781,6 +793,16 @@ export class AdvancedSalesService {
       `Processed exchange ${result.exchangeNumber} for Invoice ${invoice.invoiceNumber}. New items: Rs. ${dto.newAmount}, Returned items: Rs. ${dto.returnAmount}`,
       dto.delta,
     );
+
+    if (invoice.customerId) {
+      this.prisma.customer.findUnique({ where: { id: invoice.customerId } })
+        .then(customer => {
+          if (customer?.phone) {
+            this.smsService.sendReceiptSMS(customer.phone, result.exchangeId);
+          }
+        })
+        .catch(err => this.logger.error('Failed to fetch customer for SMS', err));
+    }
 
     return result;
   }
