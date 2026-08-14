@@ -3,6 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
+import * as crypto from 'crypto';
 dotenv.config();
 
 // Same SSL-enabled setup as seed.ts — required for Supabase connection
@@ -16,6 +17,13 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log('Seeding Super Admin...');
 
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@futurasolutions.com';
+  let adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!adminPassword) {
+    adminPassword = crypto.randomBytes(12).toString('hex') + 'A1!';
+    console.log(`[SEED] SEED_ADMIN_PASSWORD not set. Generated random password: ${adminPassword}`);
+  }
+
   // 1. Create a system shop for the super admin (required by schema FK)
   let systemShop = await prisma.shop.findFirst({
     where: { name: 'SYSTEM_ADMIN_SHOP' }
@@ -26,9 +34,6 @@ async function main() {
       data: {
         name: 'SYSTEM_ADMIN_SHOP',
         businessRegistration: 'SYS-000',
-        subscriptionPlan: 'SUPER_ADMIN',
-        paymentStatus: 'PAID',
-        subscriptionStatus: 'ACTIVE',
       }
     });
     console.log('Created system shop:', systemShop.id);
@@ -55,10 +60,10 @@ async function main() {
   }
 
   // 3. Upsert the super admin user
-  const passwordHash = await bcrypt.hash('Futura@Admin123', 10);
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@futurasolutions.com' },
+    where: { email: adminEmail },
     update: {
       password_hash: passwordHash,
       role_id: superAdminRole.id,
@@ -68,7 +73,7 @@ async function main() {
       is_verified: true,
     },
     create: {
-      email: 'admin@futurasolutions.com',
+      email: adminEmail,
       password_hash: passwordHash,
       first_name: 'Super',
       last_name: 'Admin',
@@ -82,8 +87,8 @@ async function main() {
   });
 
   console.log('\n✅ Super admin seeded successfully!');
-  console.log('   Email   : admin@futurasolutions.com');
-  console.log('   Password: Futura@Admin123');
+  console.log(`   Email   : ${adminEmail}`);
+  console.log(`   Password: ${adminPassword}`);
   console.log('   User ID :', admin.user_id);
 }
 

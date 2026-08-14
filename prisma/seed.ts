@@ -5,17 +5,27 @@ import {
   SaleType,
   PaymentStatus,
   InvoiceStatus,
+  StaffStatus,
+  Prisma,
+  Role,
+  Product,
+  Customer,
   SubscriptionPaymentStatus,
 } from '@prisma/client';
+
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
+import * as crypto from 'crypto';
 dotenv.config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
+  keepAlive: true,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
@@ -33,30 +43,71 @@ function randomInt(min: number, max: number) {
 async function main() {
   console.log('Starting seed...');
 
-  // Create Shop
-  const shop = await prisma.shop.create({
-    data: {
-      name: 'FUTURA HARDWARE',
-      businessRegistration: 'BR-12345',
-      email: 'thaheshanhamsu@gmail.com',
-      subscriptionPlan: 'PRO',
-      paymentStatus: SubscriptionPaymentStatus.PAID,
-    },
-  });
-  console.log(`Created shop: ${shop.name}`);
+  // -----------------------------
+  // ENV VALIDATION & FALLBACKS
+  // -----------------------------
+  const ownerEmail = process.env.SEED_OWNER_EMAIL || 'owner@example.com';
+  let ownerPassword = process.env.SEED_OWNER_PASSWORD;
+  
+  if (!ownerPassword) {
+    ownerPassword = crypto.randomBytes(12).toString('hex') + 'A1!';
+    console.log(
+      `[SEED] SEED_OWNER_PASSWORD not set. Generated random password: ${ownerPassword}`,
+    );
+  }
+  const passwordHash = await bcrypt.hash(ownerPassword, 10);
 
-  // Create Branch
-  const branch = await prisma.branch.create({
-    data: {
+  // Secure cashier credentials
+  const cashierEmail = process.env.SEED_CASHIER_EMAIL || 'cashier@test.com';
+  let cashierPassword = process.env.SEED_CASHIER_PASSWORD;
+  
+  if (!cashierPassword) {
+    cashierPassword = crypto.randomBytes(12).toString('hex') + 'C1!';
+    console.log(
+      `[SEED] SEED_CASHIER_PASSWORD not set. Generated random password: ${cashierPassword}`,
+    );
+  }
+  const cashierPasswordHash = await bcrypt.hash(cashierPassword, 10);
+
+  // -----------------------------
+  // SHOP (findFirst + create)
+  // -----------------------------
+  let shop = await prisma.shop.findFirst({
+    where: { email: ownerEmail },
+  });
+
+  if (!shop) {
+    shop = await prisma.shop.create({
+      data: {
+        name: 'FUTURA HARDWARE',
+        businessRegistration: 'BR-12345',
+        email: ownerEmail,
+      },
+    });
+  }
+
+  console.log(`Shop ready: ${shop.name}`);
+
+  // -----------------------------
+  // BRANCH (upsert)
+  // -----------------------------
+  const branch = await prisma.branch.upsert({
+    where: { code: 'MB-001' },
+    update: {},
+    create: {
       tenantId: shop.id,
       name: 'Main Branch',
       code: 'MB-001',
     },
   });
 
-  // Create Warehouse
-  const warehouse = await prisma.warehouse.create({
-    data: {
+  // -----------------------------
+  // WAREHOUSE (upsert)
+  // -----------------------------
+  const warehouse = await prisma.warehouse.upsert({
+    where: { code: 'WH-001' },
+    update: {},
+    create: {
       tenantId: shop.id,
       branchId: branch.id,
       name: 'Main Store',
@@ -65,39 +116,50 @@ async function main() {
     },
   });
 
-  // Ensure standard roles exist
-  let ownerRole = await prisma.role.findFirst({
-    where: { tenant_id: shop.id, name: 'OWNER' },
+  // -----------------------------
+  // ROLES (upsert)
+  // -----------------------------
+  const ownerRole = await prisma.role.upsert({
+    where: {
+      id:
+        (
+          await prisma.role.findFirst({
+            where: { name: 'OWNER', tenant_id: shop.id },
+          })
+        )?.id ?? '00000000-0000-0000-0000-000000000000',
+    },
+    update: {},
+    create: {
+      name: 'OWNER',
+      tenant_id: shop.id,
+      permissions: { all: true },
+    },
   });
-  if (!ownerRole) {
-    ownerRole = await prisma.role.create({
-      data: {
-        name: 'OWNER',
-        tenant_id: shop.id,
-        permissions: { all: true },
-      },
-    });
-    console.log(`Created role: OWNER`);
-  }
+  console.log(`Created role: OWNER`);
 
-  let cashierRole = await prisma.role.findFirst({
-    where: { tenant_id: shop.id, name: 'CASHIER' },
+  const cashierRole = await prisma.role.upsert({
+    where: {
+      id:
+        (
+          await prisma.role.findFirst({
+            where: { name: 'CASHIER', tenant_id: shop.id },
+          })
+        )?.id ?? '00000000-0000-0000-0000-000000000000',
+    },
+    update: {},
+    create: {
+      name: 'CASHIER',
+      tenant_id: shop.id,
+      permissions: { checkout: true },
+    },
   });
-  if (!cashierRole) {
-    cashierRole = await prisma.role.create({
-      data: {
-        name: 'CASHIER',
-        tenant_id: shop.id,
-        permissions: { checkout: true },
-      },
-    });
-    console.log(`Created role: CASHIER`);
-  }
+  console.log(`Created role: CASHIER`);
 
-  // Create Owner User
-  const passwordHash = await bcrypt.hash('Thaheshan0911@@', 10);
+  // -----------------------------
+  // USERS (upsert)
+  // -----------------------------
   const owner = await prisma.user.upsert({
-    where: { email: 'thaheshanhamsu@gmail.com' },
+    where: { email: ownerEmail },
     update: {
       password_hash: passwordHash,
       tenant_id: shop.id,
@@ -106,10 +168,10 @@ async function main() {
       last_name: 'somashantha thaheshan',
       is_active: true,
       is_verified: true,
-      status: 'APPROVED',
+      status: StaffStatus.APPROVED,
     },
     create: {
-      email: 'thaheshanhamsu@gmail.com',
+      email: ownerEmail,
       password_hash: passwordHash,
       tenant_id: shop.id,
       first_name: 'suresh',
@@ -118,15 +180,13 @@ async function main() {
       role_id: ownerRole.id,
       is_active: true,
       is_verified: true,
-      status: 'APPROVED',
+      status: StaffStatus.APPROVED,
     },
   });
-  console.log(`Created owner: ${owner.email}`);
+  console.log(`Owner ready: ${owner.email}`);
 
-  // Create Cashier User
-  const cashierPasswordHash = await bcrypt.hash('SecurePass@2026', 10);
   const cashier = await prisma.user.upsert({
-    where: { email: 'cashier@test.com' },
+    where: { email: cashierEmail },
     update: {
       password_hash: cashierPasswordHash,
       tenant_id: shop.id,
@@ -135,10 +195,10 @@ async function main() {
       last_name: 'User',
       is_active: true,
       is_verified: true,
-      status: 'APPROVED',
+      status: StaffStatus.APPROVED,
     },
     create: {
-      email: 'cashier@test.com',
+      email: cashierEmail,
       password_hash: cashierPasswordHash,
       tenant_id: shop.id,
       first_name: 'Cashier',
@@ -147,12 +207,14 @@ async function main() {
       role_id: cashierRole.id,
       is_active: true,
       is_verified: true,
-      status: 'APPROVED',
+      status: StaffStatus.APPROVED,
     },
   });
   console.log(`Created cashier: ${cashier.email}`);
 
-  // Categories
+  // -----------------------------
+  // CATEGORIES (create only)
+  // -----------------------------
   const categoriesData = [
     'Cement',
     'Steel',
@@ -162,14 +224,17 @@ async function main() {
     'Paint',
   ];
   const categories: Record<string, string> = {};
-  for (const catName of categoriesData) {
+
+  for (const name of categoriesData) {
     const cat = await prisma.category.create({
-      data: { tenantId: shop.id, name: catName },
+      data: { tenantId: shop.id, name },
     });
-    categories[catName] = cat.id;
+    categories[name] = cat.id;
   }
 
-  // Brands
+  // -----------------------------
+  // BRANDS (create only)
+  // -----------------------------
   const brandsData = [
     'Holcim',
     'Tokyo Super',
@@ -178,14 +243,17 @@ async function main() {
     'Asian Paint',
   ];
   const brands: Record<string, string> = {};
-  for (const brandName of brandsData) {
+
+  for (const name of brandsData) {
     const brand = await prisma.brand.create({
-      data: { tenantId: shop.id, name: brandName },
+      data: { tenantId: shop.id, name },
     });
-    brands[brandName] = brand.id;
+    brands[name] = brand.id;
   }
 
-  // Units
+  // -----------------------------
+  // UNITS (create only)
+  // -----------------------------
   const unitsData = [
     { name: 'Kilogram', abbr: 'kg' },
     { name: 'Piece', abbr: 'pcs' },
@@ -193,7 +261,9 @@ async function main() {
     { name: 'Meter', abbr: 'm' },
     { name: 'Roll', abbr: 'roll' },
   ];
+
   const units: Record<string, string> = {};
+
   for (const u of unitsData) {
     const unit = await prisma.unit.create({
       data: { tenantId: shop.id, name: u.name, abbreviation: u.abbr },
@@ -201,7 +271,9 @@ async function main() {
     units[u.name] = unit.id;
   }
 
-  // Products
+  // -----------------------------
+  // PRODUCTS + STOCK
+  // -----------------------------
   const productsData = [
     {
       name: 'Holcim Cement 50kg',
@@ -322,9 +394,10 @@ async function main() {
     },
   ];
 
-  const createdProducts = [];
+  const createdProducts: Product[] = [];
+
   for (const pd of productsData) {
-    const p = await prisma.product.create({
+    const product = await prisma.product.create({
       data: {
         tenantId: shop.id,
         name: pd.name,
@@ -340,39 +413,30 @@ async function main() {
         taxCategory: TaxCategory.STANDARD_VAT,
       },
     });
-    createdProducts.push(p);
 
-    // Initial Stock
+    createdProducts.push(product);
+
     const qty = randomInt(10, 100);
-    if (qty < 15) {
-      // Force some low stock
-      await prisma.stock.create({
-        data: {
-          tenantId: shop.id,
-          productId: p.id,
-          warehouseId: warehouse.id,
-          branchId: branch.id,
-          quantity: randomInt(1, 4),
-          availableQuantity: randomInt(1, 4),
-        },
-      });
-    } else {
-      await prisma.stock.create({
-        data: {
-          tenantId: shop.id,
-          productId: p.id,
-          warehouseId: warehouse.id,
-          branchId: branch.id,
-          quantity: qty,
-          availableQuantity: qty,
-        },
-      });
-    }
+
+    await prisma.stock.create({
+      data: {
+        tenantId: shop.id,
+        productId: product.id,
+        warehouseId: warehouse.id,
+        branchId: branch.id,
+        quantity: qty < 15 ? randomInt(1, 4) : qty,
+        availableQuantity: qty < 15 ? randomInt(1, 4) : qty,
+      },
+    });
   }
+
   console.log(`Created ${createdProducts.length} products with stock.`);
 
-  // Customers
-  const customers = [];
+  // -----------------------------
+  // CUSTOMERS
+  // -----------------------------
+  const customers: Customer[] = [];
+
   for (let i = 1; i <= 15; i++) {
     const c = await prisma.customer.create({
       data: {
@@ -385,35 +449,35 @@ async function main() {
     customers.push(c);
   }
 
-  // Generate 3 months of Sales Data
-  const endDate = new Date();
+  // -----------------------------
+  // SALES INVOICES
+  // -----------------------------
+  let invoiceCount = 0;
   const startDate = new Date();
   startDate.setMonth(startDate.getMonth() - 3);
 
-  let invoiceCount = 0;
-
-  // Roughly 3 sales per day over 90 days = ~270 sales
-  const days = 90;
-  for (let d = 0; d < days; d++) {
+  for (let d = 0; d < 90; d++) {
     const currentDay = new Date(startDate);
     currentDay.setDate(startDate.getDate() + d);
 
     const dailySales = randomInt(1, 5);
+
     for (let s = 0; s < dailySales; s++) {
       const saleTime = new Date(currentDay);
       saleTime.setHours(randomInt(8, 18), randomInt(0, 59));
 
       const numItems = randomInt(1, 4);
       let subtotal = 0;
-      const invoiceNumber = `INV-${d}-${s}-${randomInt(1000, 9999)}`;
 
-      const itemsData = [];
+      const itemsData: Prisma.SalesInvoiceItemCreateManyInvoiceInput[] = [];
+
       for (let i = 0; i < numItems; i++) {
         const prod = createdProducts[randomInt(0, createdProducts.length - 1)];
         const qty = randomInt(1, 5);
         const unitPrice = Number(prod.sellingPrice);
         const costPrice = Number(prod.purchasePrice);
         const lineTotal = unitPrice * qty;
+
         subtotal += lineTotal;
 
         itemsData.push({
@@ -433,7 +497,7 @@ async function main() {
           tenantId: shop.id,
           branchId: branch.id,
           customerId: customers[randomInt(0, customers.length - 1)].id,
-          invoiceNumber,
+          invoiceNumber: `INV-${d}-${s}-${randomInt(1000, 9999)}`,
           invoiceDate: saleTime,
           invoiceTime: saleTime,
           saleType: SaleType.CASH,
@@ -445,16 +509,15 @@ async function main() {
           status: InvoiceStatus.COMPLETED,
           cashierId: owner.user_id,
           createdAt: saleTime,
-          items: {
-            create: itemsData,
-          },
+          items: { createMany: { data: itemsData } },
         },
       });
+
       invoiceCount++;
     }
   }
-  console.log(`Generated ${invoiceCount} sales invoices over 3 months.`);
 
+  console.log(`Generated ${invoiceCount} sales invoices over 3 months.`);
   console.log('Seeding completed successfully!');
 }
 
@@ -465,4 +528,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });

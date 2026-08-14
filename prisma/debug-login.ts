@@ -13,8 +13,8 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  const email = 'admin@futurasolutions.com';
-  const password = 'Futura@Admin123';
+  const email = process.env.SEED_ADMIN_EMAIL || 'admin@futurasolutions.com';
+  const password = process.env.SEED_ADMIN_PASSWORD || 'Futura@Admin123';
 
   console.log('--- Debug Login Test ---');
 

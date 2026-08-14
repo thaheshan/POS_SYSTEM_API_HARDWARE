@@ -64,6 +64,79 @@ export class ReportExportService {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  private drawReportContent(
+    doc: any,
+    reportTitle: string,
+    data: AnalyticsReport,
+  ): void {
+    doc.fontSize(20).text(reportTitle, { align: 'center' });
+    doc.moveDown();
+
+    doc
+      .fontSize(10)
+      .fillColor('gray')
+      .text(`Generated on (UTC): ${new Date().toISOString()}`, {
+        align: 'center',
+      });
+
+    doc.fillColor('black');
+    doc.moveDown(2);
+
+    if (data.taxUpdate) {
+      doc
+        .fontSize(14)
+        .fillColor('black')
+        .text('Financial Snapshot', { underline: true });
+      doc.moveDown(0.5);
+      doc
+        .fontSize(12)
+        .text(`Period Profit: $${data.taxUpdate.periodProfit}`)
+        .text(`YTD Income: $${data.taxUpdate.ytdIncome}`)
+        .text(`Estimated Tax: $${data.taxUpdate.estimatedTaxLiability}`);
+      doc.moveDown(2);
+    }
+
+    if (data.dailyRevenue && data.dailyRevenue.length > 0) {
+      doc
+        .fontSize(14)
+        .fillColor('black')
+        .text('Revenue Trend', { underline: true });
+      doc.moveDown(0.5);
+
+      // Draw table headers
+      const startY = doc.y;
+      doc.fontSize(10).font('Helvetica-Bold');
+      doc.text('Date', 50, startY, { continued: true });
+      doc.text('Revenue (LKR)', 150, startY);
+      doc.moveDown(0.2);
+
+      const lineY = doc.y;
+      doc.moveTo(50, lineY).lineTo(300, lineY).stroke();
+      doc.moveDown(0.3);
+
+      doc.font('Helvetica');
+      data.dailyRevenue.forEach((day) => {
+        const rowY = doc.y;
+        doc.text(day.date, 50, rowY, { continued: true });
+        doc.text(`Rs. ${day.revenue.toLocaleString()}`, 150, rowY);
+      });
+      doc.moveDown(2);
+    }
+
+    if (data.reorderSuggestions && data.reorderSuggestions.length > 0) {
+      doc.fontSize(14).text('Inventory Alerts', { underline: true });
+      doc.moveDown(0.5);
+
+      data.reorderSuggestions.forEach((item) => {
+        doc
+          .fontSize(10)
+          .text(
+            `- ${item.productName}: ${item.availableQuantity} left (Min: ${item.minimumStockLevel})`,
+          );
+      });
+    }
+  }
+
   public generatePdf(
     reportTitle: string,
     data: AnalyticsReport,
@@ -78,46 +151,7 @@ export class ReportExportService {
     const doc = new PDFDocument({ margin: 50 });
 
     try {
-      doc.fontSize(20).text(reportTitle, { align: 'center' });
-      doc.moveDown();
-
-      doc
-        .fontSize(10)
-        .fillColor('gray')
-        .text(`Generated on (UTC): ${new Date().toISOString()}`, {
-          align: 'center',
-        });
-
-      doc.fillColor('black');
-      doc.moveDown(2);
-
-      if (data.taxUpdate) {
-        doc
-          .fontSize(14)
-          .fillColor('black')
-          .text('Financial Snapshot', { underline: true });
-        doc.moveDown(0.5);
-        doc
-          .fontSize(12)
-          .text(`Period Profit: $${data.taxUpdate.periodProfit}`)
-          .text(`YTD Income: $${data.taxUpdate.ytdIncome}`)
-          .text(`Estimated Tax: $${data.taxUpdate.estimatedTaxLiability}`);
-        doc.moveDown(2);
-      }
-
-      if (data.reorderSuggestions && data.reorderSuggestions.length > 0) {
-        doc.fontSize(14).text('Inventory Alerts', { underline: true });
-        doc.moveDown(0.5);
-
-        data.reorderSuggestions.forEach((item) => {
-          doc
-            .fontSize(10)
-            .text(
-              `- ${item.productName}: ${item.availableQuantity} left (Min: ${item.minimumStockLevel})`,
-            );
-        });
-      }
-
+      this.drawReportContent(doc, reportTitle, data);
       return new StreamableFile(doc);
     } catch (error) {
       if (!doc.destroyed) {
@@ -129,5 +163,26 @@ export class ReportExportService {
         doc.end();
       }
     }
+  }
+
+  public async generatePdfBuffer(
+    reportTitle: string,
+    data: AnalyticsReport,
+  ): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', (err) => reject(err));
+
+      try {
+        this.drawReportContent(doc, reportTitle, data);
+        doc.end();
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 }

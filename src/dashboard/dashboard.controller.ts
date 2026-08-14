@@ -21,25 +21,26 @@ export class DashboardController {
   }
 
   @Get('recent-transactions')
-  async getRecentTransactions(
-    @Req() req: any,
-    @Query('limit') limit?: string,
-  ) {
+  async getRecentTransactions(@Req() req: any, @Query('limit') limit?: string) {
     return this.dashboardService.getRecentTransactions(
       req.user.tenant_id,
       limit ? parseInt(limit) : 10,
-      req.user
+      req.user,
     );
   }
 
   @Get('weekly-chart')
-  async getWeeklyChart(@Req() req: any) {
-    return this.dashboardService.getWeeklyChart(req.user.tenant_id);
+  async getWeeklyChart(@Req() req: any, @Query('days') days?: string) {
+    const numDays = days ? parseInt(days) : 7;
+    return this.dashboardService.getWeeklyChart(req.user.tenant_id, numDays);
   }
 
   @Get('pending-payments')
   async getPendingPayments(@Req() req: any) {
-    return this.dashboardService.getPendingPayments(req.user.tenant_id, req.user);
+    return this.dashboardService.getPendingPayments(
+      req.user.tenant_id,
+      req.user,
+    );
   }
 
   @Get('summary')
@@ -48,6 +49,10 @@ export class DashboardController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.dashboardService.getSummary(req.user.tenant_id, startDate, endDate);
+    return this.dashboardService.getSummary(
+      req.user.tenant_id,
+      startDate,
+      endDate,
+    );
   }
 }

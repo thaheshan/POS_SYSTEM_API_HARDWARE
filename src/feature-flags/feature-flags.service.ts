@@ -16,7 +16,10 @@ export class FeatureFlagsService {
     return `feature:${tenantId}:${featureKey}`;
   }
 
-  async isFeatureEnabled(tenantId: string, featureKey: string): Promise<boolean> {
+  async isFeatureEnabled(
+    tenantId: string,
+    featureKey: string,
+  ): Promise<boolean> {
     const cacheKey = this.getCacheKey(tenantId, featureKey);
 
     try {
@@ -26,8 +29,11 @@ export class FeatureFlagsService {
         return cachedValue === 'true';
       }
     } catch (redisErr: unknown) {
-      const message = redisErr instanceof Error ? redisErr.message : String(redisErr);
-      this.logger.warn(`Redis GET failed for key ${cacheKey}, falling back to DB: ${message}`);
+      const message =
+        redisErr instanceof Error ? redisErr.message : String(redisErr);
+      this.logger.warn(
+        `Redis GET failed for key ${cacheKey}, falling back to DB: ${message}`,
+      );
     }
 
     try {
@@ -46,7 +52,10 @@ export class FeatureFlagsService {
       try {
         await this.redis.set(cacheKey, isEnabled ? 'true' : 'false', 'EX', 300);
       } catch (redisSetErr: unknown) {
-        const message = redisSetErr instanceof Error ? redisSetErr.message : String(redisSetErr);
+        const message =
+          redisSetErr instanceof Error
+            ? redisSetErr.message
+            : String(redisSetErr);
         this.logger.warn(`Redis SET failed for key ${cacheKey}: ${message}`);
       }
 
@@ -72,7 +81,15 @@ export class FeatureFlagsService {
       select: { role: true, is_active: true },
     });
 
-    if (!dbUser || !dbUser.is_active || (dbUser.role !== 'owner' && dbUser.role !== 'manager')) {
+    const roleName =
+      typeof dbUser?.role === 'string' ? dbUser.role : dbUser?.role?.name;
+    const lowerRole = roleName?.toLowerCase();
+
+    if (
+      !dbUser ||
+      !dbUser.is_active ||
+      (lowerRole !== 'owner' && lowerRole !== 'manager')
+    ) {
       throw new ForbiddenException('Only owner or manager can toggle features');
     }
 
@@ -95,8 +112,13 @@ export class FeatureFlagsService {
     try {
       await this.redis.set(cacheKey, enabled ? 'true' : 'false', 'EX', 300);
     } catch (redisSetErr: unknown) {
-      const message = redisSetErr instanceof Error ? redisSetErr.message : String(redisSetErr);
-      this.logger.warn(`Redis SET failed on toggle for key ${cacheKey}: ${message}`);
+      const message =
+        redisSetErr instanceof Error
+          ? redisSetErr.message
+          : String(redisSetErr);
+      this.logger.warn(
+        `Redis SET failed on toggle for key ${cacheKey}: ${message}`,
+      );
     }
 
     return updated;

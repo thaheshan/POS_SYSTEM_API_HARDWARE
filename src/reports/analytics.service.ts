@@ -670,4 +670,140 @@ export class AnalyticsService {
       projectedBalanceDue: Number(projectedBalanceDue.toFixed(2)),
     };
   }
+
+  public async getRevenueTrend(
+    tenantId: string,
+    startDateStr?: string,
+    endDateStr?: string,
+  ) {
+    const now = new Date();
+    let start: Date;
+    let end: Date;
+    let period = 'custom';
+
+    if (startDateStr && endDateStr) {
+      start = new Date(`${startDateStr}T00:00:00.000Z`);
+      const endBase = new Date(`${endDateStr}T00:00:00.000Z`);
+      end = new Date(endBase);
+      end.setUTCDate(endBase.getUTCDate() + 1);
+    } else {
+      period = 'last_30_days';
+      const todayStart = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+      );
+      end = new Date(todayStart);
+      end.setUTCDate(todayStart.getUTCDate() + 1);
+      start = new Date(todayStart);
+      start.setUTCDate(todayStart.getUTCDate() - 29);
+    }
+
+    const dailyRevenue = await this.getDailyRevenue(tenantId, start, end);
+
+    return {
+      period,
+      currency: 'LKR',
+      data: dailyRevenue.map((item) => ({
+        date: item.date,
+        revenue: item.revenue,
+      })),
+    };
+  }
+
+  public async getRevenueComparison(
+    tenantId: string,
+    period: string = 'This Year',
+  ) {
+    const now = new Date();
+    const currentYear = now.getUTCFullYear();
+    const lastYear = currentYear - 1;
+
+    let startOfLastYear: Date;
+    let endOfCurrentYear: Date;
+
+    if (period === 'Year to Date') {
+      startOfLastYear = new Date(Date.UTC(lastYear, 0, 1));
+      endOfCurrentYear = now;
+    } else if (period === 'Last 12 Months') {
+      endOfCurrentYear = now;
+      startOfLastYear = new Date(
+        Date.UTC(now.getUTCFullYear() - 2, now.getUTCMonth(), now.getUTCDate()),
+      );
+    } else {
+      // Default: 'This Year' (Full Calendar Year)
+      startOfLastYear = new Date(Date.UTC(lastYear, 0, 1));
+      endOfCurrentYear = new Date(
+        Date.UTC(currentYear, 11, 31, 23, 59, 59, 999),
+      );
+    }
+
+    const invoices = await this.prisma.salesInvoice.findMany({
+      where: {
+        tenantId,
+        createdAt: {
+          gte: startOfLastYear,
+          lte: endOfCurrentYear,
+        },
+        status: 'COMPLETED',
+      },
+      select: {
+        createdAt: true,
+        totalAmount: true,
+      },
+    });
+
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    const comparisonData = months.map((month) => ({
+      name: month,
+      current: 0,
+      last: 0,
+    }));
+
+    // Generate a fixed timestamp for exactly one year ago
+    const oneYearAgo = new Date(now);
+    oneYearAgo.setUTCFullYear(currentYear - 1);
+
+    for (const inv of invoices) {
+      const year = inv.createdAt.getUTCFullYear();
+      const monthIndex = inv.createdAt.getUTCMonth();
+      const amount = Number(inv.totalAmount);
+
+      if (period === 'Last 12 Months') {
+        if (inv.createdAt >= oneYearAgo) {
+          comparisonData[monthIndex].current += amount;
+        } else {
+          comparisonData[monthIndex].last += amount;
+        }
+      } else {
+        if (year === currentYear) {
+          comparisonData[monthIndex].current += amount;
+        } else if (year === lastYear) {
+          comparisonData[monthIndex].last += amount;
+        }
+      }
+    }
+
+    return {
+      period: period,
+      currency: 'LKR',
+      data: comparisonData.map((item) => ({
+        name: item.name,
+        current: Math.round(item.current / 1000),
+        last: Math.round(item.last / 1000),
+      })),
+    };
+  }
 }
