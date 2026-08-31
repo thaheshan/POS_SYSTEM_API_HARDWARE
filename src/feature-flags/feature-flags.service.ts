@@ -32,7 +32,7 @@ export class FeatureFlagsService {
 
     try {
       // Database fallback when cache is unavailable or misses.
-      const featureFlag = await this.prisma.featureFlag.findUnique({
+      const featureFlag = await (this.prisma as any).featureFlag.findUnique({
         where: {
           tenant_id_feature_key: {
             tenant_id: tenantId,
@@ -66,17 +66,24 @@ export class FeatureFlagsService {
     featureKey: string,
     enabled: boolean,
   ) {
-    // 3. Privilege Escalation Fix: Query DB live for current user role
+    // 3. Privilege Escalation Fix: Query DB live for current user role via relation
     const dbUser = await this.prisma.user.findUnique({
       where: { user_id: userId },
-      select: { role: true, is_active: true },
+      select: {
+        is_active: true,
+        role: {
+          select: { name: true },
+        },
+      },
     });
 
-    if (!dbUser || !dbUser.is_active || (dbUser.role !== 'owner' && dbUser.role !== 'manager')) {
+    const roleName = dbUser?.role?.name?.toLowerCase();
+
+    if (!dbUser || !dbUser.is_active || (roleName !== 'owner' && roleName !== 'manager' && roleName !== 'admin')) {
       throw new ForbiddenException('Only owner or manager can toggle features');
     }
 
-    const updated = await this.prisma.featureFlag.upsert({
+    const updated = await (this.prisma as any).featureFlag.upsert({
       where: {
         tenant_id_feature_key: {
           tenant_id: tenantId,
