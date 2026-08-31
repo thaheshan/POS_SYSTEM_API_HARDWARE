@@ -6,3 +6,7 @@
 SUCCESS: Sent to 94756645486. Response: {"status":"success","message":"Your message was successfully delivered","data":{"uid":"6a4b56cb01535","to":"94756645486","from":"TextLKDemo","message":"Thank you for your purchase from Futura Hardware!\nView your invoice here:\nhttp://localhost:3000/receipt/50ff34a8-646c-4ccb-b2b0-17e1a8650cdb","status":"Delivered","cost":"1","sms_count":1}}
 
 [CHECKOUT END] dto.customerId: undefined
+
+[CHECKOUT END] dto.customerId: 5e9646b1-abe3-4063-a75f-136377a669d2
+[DB FETCH] Customer found: true, Phone: 0752570435
+SUCCESS: Sent to 94752570435. Response: {"status":"success","message":"Your message was successfully delivered","data":{"uid":"6a953882360b5","to":"94752570435","from":"TextLKDemo","message":"Thank you for your purchase from Futura Hardware!\nView your invoice here:\nhttps://www.futurahardware.com/receipt/6d6545e5-889e-42f6-8f17-c9aeba0ef6f3","status":"Delivered","cost":"1","sms_count":1}}
