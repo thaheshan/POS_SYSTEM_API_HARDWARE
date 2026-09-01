@@ -74,6 +74,7 @@ export class ProductsService {
           sku: dto.sku,
           description: dto.description,
           categoryId: categoryId,
+          subcategoryId: dto.subcategoryId || undefined,
           brandId: dto.brandId,
           unitId: dto.unitId,
           purchasePrice: purchasePrice,
@@ -247,6 +248,7 @@ export class ProductsService {
       where: { tenantId, isActive: true },
       include: {
         category: true,
+        subCategory: true,
         brand: true,
         unit: true,
         images: true,
@@ -256,18 +258,59 @@ export class ProductsService {
 
   async getCategories(tenantId: string) {
     return this.prisma.category.findMany({
-      where: { tenantId, isActive: true },
+      where: { tenantId, isActive: true, parentId: null }, // only top-level
+      orderBy: { name: 'asc' },
+      include: {
+        subcategories: {
+          where: { isActive: true },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
+  }
+
+  async getSubcategories(tenantId: string, parentId: string) {
+    return this.prisma.category.findMany({
+      where: { tenantId, parentId, isActive: true },
       orderBy: { name: 'asc' },
     });
   }
 
   async createCategory(tenantId: string, name: string, description?: string) {
     return this.prisma.category.create({
+      data: { tenantId, name, description },
+    });
+  }
+
+  async createSubcategory(tenantId: string, parentId: string, name: string, description?: string) {
+    // verify parent exists and belongs to this tenant
+    const parent = await this.prisma.category.findFirst({
+      where: { id: parentId, tenantId },
+    });
+    if (!parent) throw new NotFoundException('Parent category not found');
+    return this.prisma.category.create({
+      data: { tenantId, parentId, name, description },
+    });
+  }
+
+  async updateCategory(tenantId: string, categoryId: string, name?: string, description?: string) {
+    const cat = await this.prisma.category.findFirst({ where: { id: categoryId, tenantId } });
+    if (!cat) throw new NotFoundException('Category not found');
+    return this.prisma.category.update({
+      where: { id: categoryId },
       data: {
-        tenantId,
-        name,
-        description,
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
       },
+    });
+  }
+
+  async deleteCategory(tenantId: string, categoryId: string) {
+    const cat = await this.prisma.category.findFirst({ where: { id: categoryId, tenantId } });
+    if (!cat) throw new NotFoundException('Category not found');
+    return this.prisma.category.update({
+      where: { id: categoryId },
+      data: { isActive: false },
     });
   }
 

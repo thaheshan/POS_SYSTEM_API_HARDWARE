@@ -42,6 +42,11 @@ export class CreateProductDto {
   @ApiPropertyOptional()
   @IsUUID()
   @IsOptional()
+  subcategoryId?: string;
+
+  @ApiPropertyOptional()
+  @IsUUID()
+  @IsOptional()
   brandId?: string;
 
   @ApiPropertyOptional()

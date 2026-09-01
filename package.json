@@ -22,7 +22,10 @@
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:studio": "npx prisma studio",
     "seed": "ts-node --transpile-only prisma/seed.ts",
-    "seed:admin": "ts-node --transpile-only prisma/seed-admin.ts"
+    "seed:admin": "ts-node --transpile-only prisma/seed-admin.ts",
+    "seed:catalog": "ts-node --transpile-only prisma/seed-master-catalog.ts",
+    "seed:aliases": "ts-node --transpile-only prisma/seed-catalog-aliases.ts",
+    "seed:images": "ts-node --transpile-only prisma/seed-catalog-images.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

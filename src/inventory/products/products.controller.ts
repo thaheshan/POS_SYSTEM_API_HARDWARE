@@ -80,6 +80,54 @@ export class ProductsController {
     );
   }
 
+  @Get('categories/:id/subcategories')
+  @ApiOperation({ summary: 'Get subcategories for a parent category' })
+  async getSubcategories(
+    @Param('id') parentId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.getSubcategories(req.user.tenant_id, parentId);
+  }
+
+  @Post('categories/:id/subcategories')
+  @ApiOperation({ summary: 'Create a subcategory under a parent category' })
+  async createSubcategory(
+    @Param('id') parentId: string,
+    @Body() body: { name: string; description?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.createSubcategory(
+      req.user.tenant_id,
+      parentId,
+      body.name,
+      body.description,
+    );
+  }
+
+  @Patch('categories/:id')
+  @ApiOperation({ summary: 'Update a category or subcategory name/description' })
+  async updateCategory(
+    @Param('id') categoryId: string,
+    @Body() body: { name?: string; description?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.updateCategory(
+      req.user.tenant_id,
+      categoryId,
+      body.name,
+      body.description,
+    );
+  }
+
+  @Delete('categories/:id')
+  @ApiOperation({ summary: 'Delete (deactivate) a category' })
+  async deleteCategory(
+    @Param('id') categoryId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.deleteCategory(req.user.tenant_id, categoryId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get all products' })
   @ApiResponse({ status: 200, description: 'List of products' })
