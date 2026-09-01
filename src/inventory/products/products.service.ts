@@ -261,9 +261,19 @@ export class ProductsService {
       where: { tenantId, isActive: true, parentId: null }, // only top-level
       orderBy: { name: 'asc' },
       include: {
+        brands: {
+          where: { isActive: true },
+          orderBy: { name: 'asc' },
+        },
         subcategories: {
           where: { isActive: true },
           orderBy: { name: 'asc' },
+          include: {
+            brands: {
+              where: { isActive: true },
+              orderBy: { name: 'asc' },
+            },
+          },
         },
       },
     });
@@ -273,6 +283,12 @@ export class ProductsService {
     return this.prisma.category.findMany({
       where: { tenantId, parentId, isActive: true },
       orderBy: { name: 'asc' },
+      include: {
+        brands: {
+          where: { isActive: true },
+          orderBy: { name: 'asc' },
+        },
+      },
     });
   }
 
@@ -310,6 +326,45 @@ export class ProductsService {
     if (!cat) throw new NotFoundException('Category not found');
     return this.prisma.category.update({
       where: { id: categoryId },
+      data: { isActive: false },
+    });
+  }
+
+  /* ─── Brand Endpoints ─── */
+  async getBrands(tenantId: string, subcategoryId?: string) {
+    return this.prisma.brand.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        ...(subcategoryId ? { categoryId: subcategoryId } : {}),
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createBrand(tenantId: string, name: string, categoryId?: string, description?: string) {
+    return this.prisma.brand.create({
+      data: { tenantId, name, categoryId, description },
+    });
+  }
+
+  async updateBrand(tenantId: string, brandId: string, name?: string, description?: string) {
+    const brand = await this.prisma.brand.findFirst({ where: { id: brandId, tenantId } });
+    if (!brand) throw new NotFoundException('Brand not found');
+    return this.prisma.brand.update({
+      where: { id: brandId },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+      },
+    });
+  }
+
+  async deleteBrand(tenantId: string, brandId: string) {
+    const brand = await this.prisma.brand.findFirst({ where: { id: brandId, tenantId } });
+    if (!brand) throw new NotFoundException('Brand not found');
+    return this.prisma.brand.update({
+      where: { id: brandId },
       data: { isActive: false },
     });
   }

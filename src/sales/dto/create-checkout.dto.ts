@@ -59,4 +59,9 @@ export class CreateCheckoutDto {
   @IsNumber()
   @IsOptional()
   paidAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsNumber()
+  @IsOptional()
+  change?: number;
 }

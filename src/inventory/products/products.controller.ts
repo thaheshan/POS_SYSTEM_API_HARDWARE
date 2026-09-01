@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Patch,
+  Query,
   Req,
   UseGuards,
   UseInterceptors,
@@ -126,6 +127,54 @@ export class ProductsController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.productsService.deleteCategory(req.user.tenant_id, categoryId);
+  }
+
+  /* ─── Brand Endpoints ─── */
+  @Get('brands')
+  @ApiOperation({ summary: 'Get all brands (optionally filtered by subcategoryId)' })
+  async getBrands(
+    @Query('subcategoryId') subcategoryId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.getBrands(req.user.tenant_id, subcategoryId);
+  }
+
+  @Post('brands')
+  @ApiOperation({ summary: 'Create a new brand' })
+  async createBrand(
+    @Body() body: { name: string; categoryId?: string; description?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.createBrand(
+      req.user.tenant_id,
+      body.name,
+      body.categoryId,
+      body.description,
+    );
+  }
+
+  @Patch('brands/:id')
+  @ApiOperation({ summary: 'Update a brand' })
+  async updateBrand(
+    @Param('id') brandId: string,
+    @Body() body: { name?: string; description?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.updateBrand(
+      req.user.tenant_id,
+      brandId,
+      body.name,
+      body.description,
+    );
+  }
+
+  @Delete('brands/:id')
+  @ApiOperation({ summary: 'Delete (deactivate) a brand' })
+  async deleteBrand(
+    @Param('id') brandId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.deleteBrand(req.user.tenant_id, brandId);
   }
 
   @Get()
