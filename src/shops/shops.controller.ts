@@ -1,4 +1,4 @@
-import { Controller, Post, UseGuards, UseInterceptors, UploadedFile, Req, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, UseGuards, UseInterceptors, UploadedFile, Req, BadRequestException } from '@nestjs/common';
 import { ShopsService } from './shops.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -10,6 +10,57 @@ import type { AuthRequest } from '../common/interfaces/auth-request.interface';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ShopsController {
   constructor(private readonly shopsService: ShopsService) {}
+
+  @Get('profile')
+  @Roles('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'STAFF')
+  async getProfile(@Req() req: AuthRequest) {
+    return this.shopsService.getProfile(req.user.tenant_id);
+  }
+
+  @Patch('profile')
+  @Roles('OWNER', 'ADMIN')
+  async updateProfile(
+    @Req() req: AuthRequest,
+    @Body() body: {
+      name?: string;
+      businessRegistration?: string;
+      email?: string;
+      phone?: string;
+      address?: string;
+      city?: string;
+      district?: string;
+      province?: string;
+    },
+  ) {
+    return this.shopsService.updateProfile(req.user.tenant_id, body);
+  }
+
+  @Get('settings')
+  @Roles('OWNER', 'ADMIN', 'MANAGER')
+  async getSettings(@Req() req: AuthRequest) {
+    return this.shopsService.getShopSettings(req.user.tenant_id);
+  }
+
+  @Patch('settings')
+  @Roles('OWNER', 'ADMIN')
+  async updateSettings(
+    @Req() req: AuthRequest,
+    @Body() body: Record<string, any>,
+  ) {
+    return this.shopsService.updateShopSettings(req.user.tenant_id, body);
+  }
+
+  @Get('subscription-status')
+  @Roles('OWNER', 'ADMIN')
+  async getSubscriptionStatus(@Req() req: AuthRequest) {
+    return this.shopsService.getSubscriptionStatus(req.user.tenant_id);
+  }
+
+  @Post('self-report-payment')
+  @Roles('OWNER', 'ADMIN')
+  async selfReportPayment(@Req() req: AuthRequest) {
+    return this.shopsService.selfReportPayment(req.user.tenant_id);
+  }
 
   @Post('logo')
   @Roles('OWNER', 'ADMIN')

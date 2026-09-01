@@ -151,6 +151,7 @@ model Shop {
   name                 String  @map("shop_name") @db.VarChar(200)
   businessRegistration String? @map("business_registration") @db.VarChar(100)
   email                String?
+  phone                String? @db.VarChar(30)
   logo_url             String? @map("logo_url")
 
   // Address
@@ -199,6 +200,7 @@ model FeatureFlag {
   tenant_id   String   @db.Uuid
   feature_key String
   enabled     Boolean  @default(false)
+  value       String?  @db.Text
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
@@ -281,8 +283,13 @@ model Category {
   description String? @db.Text
   isActive    Boolean @default(true) @map("is_active")
 
-  shop     Shop      @relation(fields: [tenantId], references: [id])
-  products Product[]
+  shop     Shop       @relation(fields: [tenantId], references: [id])
+  products Product[]  @relation("ProductMainCategory")
+  subProducts Product[] @relation("ProductSubCategory")
+
+  parentId     String?    @map("parent_id") @db.Uuid
+  parent       Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  subcategories Category[] @relation("CategoryHierarchy")
 
   @@map("categories")
 }
@@ -320,6 +327,7 @@ model Product {
   sku                 String       @map("sku")
   barcode             String?      @map("barcode")
   categoryId          String       @map("category_id") @db.Uuid
+  subcategoryId       String?      @map("subcategory_id") @db.Uuid
   brandId             String?      @map("brand_id") @db.Uuid
   unitId              String?      @map("unit_id") @db.Uuid
   purchasePrice       Decimal?     @map("purchase_price") @db.Decimal(10, 2)
@@ -346,7 +354,8 @@ model Product {
   updatedAt           DateTime     @updatedAt @map("updated_at")
 
   shop              Shop               @relation(fields: [tenantId], references: [id])
-  category          Category           @relation(fields: [categoryId], references: [id])
+  category          Category           @relation("ProductMainCategory", fields: [categoryId], references: [id])
+  subCategory       Category?          @relation("ProductSubCategory", fields: [subcategoryId], references: [id])
   brand             Brand?             @relation(fields: [brandId], references: [id])
   unit              Unit?              @relation(fields: [unitId], references: [id])
   creator           User?              @relation("ProductCreatedBy", fields: [createdBy], references: [user_id])

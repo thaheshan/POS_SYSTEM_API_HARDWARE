@@ -26,6 +26,8 @@ import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 import { SmsModule } from './sms/sms.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 
+import { CatalogModule } from './catalog/catalog.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -53,6 +55,7 @@ import { WarehousesModule } from './warehouses/warehouses.module';
     ActivityLogsModule,
     SmsModule,
     WarehousesModule,
+    CatalogModule,
   ],
   controllers: [AppController],
   providers: [AppService],
