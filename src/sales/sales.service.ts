@@ -447,6 +447,13 @@ export class SalesService {
         const invoiceNumber = `INV-${new Date().getFullYear()}-${timestamp}-${randomPart}`;
         const now = new Date();
 
+        const isCreditSale = (dto.paymentMethod || '').toUpperCase() === 'CREDIT' || (dto.paidAmount !== undefined && dto.paidAmount < totalAmount);
+        const paidAmount = dto.paidAmount ?? (isCreditSale ? 0 : totalAmount);
+        const balanceAddition = Math.max(0, totalAmount - paidAmount);
+        const changeAmount = isCreditSale ? 0 : Number(dto.change || 0);
+        const paymentStatus = balanceAddition <= 0 ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'UNPAID');
+        const saleTypeVal = isCreditSale ? 'CREDIT' : 'CASH';
+
         const invoice = await tx.salesInvoice.create({
           data: {
             tenantId,
@@ -455,12 +462,15 @@ export class SalesService {
             invoiceNumber,
             invoiceDate: now,
             invoiceTime: now,
-            saleType: 'CASH',
+            saleType: saleTypeVal as any,
             subtotal,
             discountAmount: discount,
             taxAmount,
             totalAmount,
-            paymentStatus: 'PAID', // Or PARTIAL if we implement credit later
+            paidAmount,
+            changeAmount,
+            balance: balanceAddition,
+            paymentStatus: paymentStatus as any,
             status: 'COMPLETED',
             notes: dto.notes ?? null,
             cashierId: userId,
@@ -483,10 +493,6 @@ export class SalesService {
 
         // --- Update Customer Totals ---
         if (dto.customerId) {
-          const balanceAddition = Math.max(
-            0,
-            totalAmount - (dto.paidAmount ?? totalAmount),
-          );
           await tx.customer.update({
             where: { id: dto.customerId },
             data: {
