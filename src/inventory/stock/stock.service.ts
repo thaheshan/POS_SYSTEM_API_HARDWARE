@@ -22,7 +22,12 @@ type StockOverviewPayload = Prisma.StockGetPayload<{
         purchasePrice: true;
         sellType: true;
         measurementUnit: true;
-        category: { select: { name: true } };
+        categoryId: true;
+        subcategoryId: true;
+        brandId: true;
+        category: { select: { id: true; name: true } };
+        subCategory: { select: { id: true; name: true } };
+        brand: { select: { id: true; name: true } };
         images: {
           select: { imageUrl: true; isPrimary: true };
           orderBy: { isPrimary: 'desc' };
@@ -60,7 +65,12 @@ export class StockService {
             purchasePrice: true,
             sellType: true,
             measurementUnit: true,
-            category: { select: { name: true } },
+            categoryId: true,
+            subcategoryId: true,
+            brandId: true,
+            category: { select: { id: true, name: true } },
+            subCategory: { select: { id: true, name: true } },
+            brand: { select: { id: true, name: true } },
             images: {
               select: { imageUrl: true, isPrimary: true },
               orderBy: { isPrimary: 'desc' },
@@ -109,7 +119,12 @@ export class StockService {
             purchasePrice: true,
             sellType: true,
             measurementUnit: true,
-            category: { select: { name: true } },
+            categoryId: true,
+            subcategoryId: true,
+            brandId: true,
+            category: { select: { id: true, name: true } },
+            subCategory: { select: { id: true, name: true } },
+            brand: { select: { id: true, name: true } },
             images: {
               select: { imageUrl: true, isPrimary: true },
               orderBy: { isPrimary: 'desc' },
@@ -532,7 +547,12 @@ export class StockService {
       sku: stock.product.sku,
       selling_price: Number(stock.product.sellingPrice),
       purchase_price: Number(stock.product.purchasePrice ?? 0),
+      category_id: stock.product.categoryId,
       category_name: stock.product.category?.name || 'All',
+      subcategory_id: stock.product.subcategoryId || null,
+      subcategory_name: stock.product.subCategory?.name || '—',
+      brand_id: stock.product.brandId || null,
+      brand_name: stock.product.brand?.name || '—',
       image_url: (stock.product as any).images?.[0]?.imageUrl ?? null,
       quantity,
       reserved_quantity: reserved,
