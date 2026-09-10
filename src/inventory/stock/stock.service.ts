@@ -435,6 +435,7 @@ export class StockService {
       where: { id: stockId },
       data: {
         quantity: { increment: addQty },
+        availableQuantity: { increment: addQty },
       },
     });
   }

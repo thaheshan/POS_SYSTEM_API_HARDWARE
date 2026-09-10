@@ -83,3 +83,5 @@ SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
 SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
 SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
 SUCCESS: Logged EXCHANGE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
+SUCCESS: Logged CREATE_SALE for suresh somashantha thaheshan
