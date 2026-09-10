@@ -3,7 +3,7 @@ const axios = require('axios');
 async function testSMS() {
   const API_URL = 'https://app.text.lk/api/v3/sms/send';
   const API_TOKEN = '5712|3BWcH4C9bFA69kplnjXmXlauJmxG1HIsPuXef5RF1eafd116';
-  const SENDER_ID = 'TextLKDemo';
+  const SENDER_ID = process.env.TEXTLK_SENDER_ID || process.env.TEXT_LK_SENDER_ID || 'TrincoHW';
 
   try {
     const response = await axios.post(

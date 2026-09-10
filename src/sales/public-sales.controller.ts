@@ -15,7 +15,7 @@ export class PublicSalesController {
         'https://app.text.lk/api/v3/sms/send',
         {
           recipient: '94756645486',
-          sender_id: 'TextLKDemo',
+          sender_id: process.env.TEXTLK_SENDER_ID || process.env.TEXT_LK_SENDER_ID || 'TrincoHW',
           type: 'plain',
           message: 'This is a direct test message from API',
         },

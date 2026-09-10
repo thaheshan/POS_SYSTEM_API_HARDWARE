@@ -628,9 +628,11 @@ export class ProductsService {
           discountType: dto.discountType,
           maxAllowedDiscount: dto.maxAllowedDiscount,
           defaultDiscountValue: dto.defaultDiscountValue,
-          // Security measure: if they change the config, you might want to auto-revoke approval
-          // isDiscountApproved: false,
-        },
+          hasSecondaryDiscount: dto.hasSecondaryDiscount,
+          secondaryDiscountType: dto.secondaryDiscountType,
+          maxSecondaryDiscount: dto.maxSecondaryDiscount,
+          defaultSecondaryDiscount: dto.defaultSecondaryDiscount,
+        } as any,
       });
     } catch (error) {
       console.error(
