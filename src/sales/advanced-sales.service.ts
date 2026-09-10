@@ -672,16 +672,25 @@ export class AdvancedSalesService {
             throw new BadRequestException(`No stock record found for product "${product?.name || item.productId}". Please add stock first.`);
           }
 
-          if (Number(stock.quantity) < item.quantity) {
+          // Use availableQuantity if it is set (explicit field), otherwise fall back to quantity
+          const stockAvailable =
+            stock.availableQuantity != null
+              ? Number(stock.availableQuantity)
+              : Number(stock.quantity);
+          if (stockAvailable < item.quantity) {
             const product = await tx.product.findFirst({ where: { id: item.productId, tenantId } });
-            throw new BadRequestException(`Insufficient stock for "${product?.name || item.productId}". Available: ${stock.quantity}, Requested: ${item.quantity}`);
+            throw new BadRequestException(`Insufficient stock for "${product?.name || item.productId}". Available: ${stockAvailable}, Requested: ${item.quantity}`);
           }
 
           const resolvedWarehouseId = stock.warehouseId;
 
+          // Deduct stock — keep both quantity and availableQuantity in sync
           await tx.stock.update({
             where: { id: stock.id },
-            data: { quantity: { decrement: item.quantity } },
+            data: {
+              quantity: { decrement: item.quantity },
+              availableQuantity: { decrement: item.quantity },
+            },
           });
  
           const product = await tx.product.findFirst({ where: { id: item.productId, tenantId } });

@@ -50,3 +50,7 @@ SUCCESS: Sent to 94774561245. Response: {"status":"success","message":"Your mess
 
 [CHECKOUT END] dto.customerId: 7aa59ea4-d7e4-4006-9fd7-690934b63200
 [DB FETCH] Customer found: true, Phone: 0756645486
+
+[CHECKOUT END] dto.customerId: undefined
+
+[CHECKOUT END] dto.customerId: undefined

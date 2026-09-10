@@ -354,18 +354,24 @@ export class SalesService {
             resolvedBranchId = stockRecord.branchId;
           }
 
+          // Use availableQuantity if it is set (explicit field), otherwise fall back to quantity - reservedQuantity
           const available =
-            Number(stockRecord.quantity) - Number(stockRecord.reservedQuantity);
+            stockRecord.availableQuantity != null
+              ? Number(stockRecord.availableQuantity)
+              : Number(stockRecord.quantity) - Number(stockRecord.reservedQuantity);
           if (available < item.quantity) {
             throw new BadRequestException(
               `Insufficient stock for "${product.name}". Available: ${available}, Requested: ${item.quantity}`,
             );
           }
 
-          // Deduct stock
+          // Deduct stock — keep both quantity and availableQuantity in sync
           await tx.stock.update({
             where: { id: stockRecord.id },
-            data: { quantity: { decrement: item.quantity } },
+            data: {
+              quantity: { decrement: item.quantity },
+              availableQuantity: { decrement: item.quantity },
+            },
           });
 
           // Stock movement log
