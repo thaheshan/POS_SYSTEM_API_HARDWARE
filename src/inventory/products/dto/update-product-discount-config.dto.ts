@@ -26,4 +26,24 @@ export class UpdateProductDiscountConfigDto {
   @Min(0, { message: 'Default discount value cannot be negative' })
   @Type(() => Number)
   defaultDiscountValue?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  hasSecondaryDiscount?: boolean;
+
+  @IsOptional()
+  @IsEnum(DiscountType)
+  secondaryDiscountType?: DiscountType;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0, { message: 'Maximum secondary discount cannot be negative' })
+  @Type(() => Number)
+  maxSecondaryDiscount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0, { message: 'Default secondary discount cannot be negative' })
+  @Type(() => Number)
+  defaultSecondaryDiscount?: number;
 }
