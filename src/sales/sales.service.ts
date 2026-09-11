@@ -43,6 +43,15 @@ export class SalesService {
         where,
         include: {
           customer: { select: { name: true } },
+          items: {
+            select: {
+              quantity: true,
+              unitPrice: true,
+              costPrice: true,
+              lineTotal: true,
+              product: { select: { purchasePrice: true } },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: limit,
