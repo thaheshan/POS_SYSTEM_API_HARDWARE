@@ -451,6 +451,15 @@ export class ProductsService {
           ? Number(dto.maximumStockLevel)
           : undefined;
 
+      const maxAllowedDiscount =
+        dto.maxAllowedDiscount !== undefined
+          ? Number(dto.maxAllowedDiscount)
+          : undefined;
+      const defaultDiscountValue =
+        dto.defaultDiscountValue !== undefined
+          ? Number(dto.defaultDiscountValue)
+          : undefined;
+
       // Update product core fields
       const product = await this.prisma.product.update({
         where: { id: productId },
@@ -462,10 +471,16 @@ export class ProductsService {
           subcategoryId: dto.subcategoryId !== undefined ? dto.subcategoryId : dto.subCategoryId !== undefined ? dto.subCategoryId : undefined,
           brandId: dto.brandId || undefined,
           unitId: dto.unitId,
+          measurementUnit: dto.measurementUnit !== undefined ? dto.measurementUnit : undefined,
           purchasePrice: purchasePrice,
           sellingPrice: sellingPrice,
           minimumStockLevel: minimumStockLevel,
           maximumStockLevel: maximumStockLevel,
+          maxAllowedDiscount: maxAllowedDiscount,
+          defaultDiscountValue: defaultDiscountValue,
+          discountType: dto.discountType || undefined,
+          isDiscountEnabled: dto.isDiscountEnabled !== undefined ? Boolean(dto.isDiscountEnabled) : undefined,
+          isDiscountApproved: dto.isDiscountApproved !== undefined ? Boolean(dto.isDiscountApproved) : undefined,
         },
       });
 
