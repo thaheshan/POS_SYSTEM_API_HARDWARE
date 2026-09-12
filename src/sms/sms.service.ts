@@ -9,7 +9,7 @@ export class SmsService {
   private readonly API_URL    = process.env.TEXTLK_API_URL || process.env.TEXT_LK_API_URL || 'https://app.text.lk/api/v3/sms/send';
   private readonly API_TOKEN  = process.env.TEXTLK_API_TOKEN || process.env.TEXT_LK_API_TOKEN || process.env.TEXT_LK_API_KEY || '5712|3BWcH4C9bFA69kplnjXmXlauJmxG1HIsPuXef5RF1eafd116';
   private readonly SENDER_ID  = process.env.TEXTLK_SENDER_ID || process.env.TEXT_LK_SENDER_ID || 'TrincoHW';
-  private readonly SHOP_NAME  = 'Futura Hardware';
+  private readonly SHOP_NAME  = 'Trinco Hardware & Electricals';
   private readonly RECEIPT_BASE_URL = process.env.FRONTEND_RECEIPT_URL || 'https://www.futurahardware.com';
 
   constructor(private prisma: PrismaService) {}
@@ -67,22 +67,45 @@ export class SmsService {
   }
 
   /**
+   * Helper to fetch live Shop details from database
+   */
+  private async getShopDetails(tenantId?: string) {
+    try {
+      if (tenantId) {
+        const shop = await this.prisma.shop.findUnique({ where: { id: tenantId } });
+        if (shop) return shop;
+      }
+      const firstShop = await this.prisma.shop.findFirst();
+      if (firstShop) return firstShop;
+    } catch (e) {
+      this.logger.warn('[SMS] Could not fetch shop details from DB:', e);
+    }
+    return {
+      name: 'Trinco Hardware & Electricals',
+      address: 'Anuradapura Junction, Trincomalee, Sri Lanka',
+      phone: '+94763539351',
+    };
+  }
+
+  /**
    * Send an SMS receipt link to the customer.
    */
   async sendReceiptSMS(
     phoneNumber: string,
     invoiceId: string,
-    shopName: string = this.SHOP_NAME,
+    shopName?: string,
   ): Promise<void> {
     if (!phoneNumber) {
       this.logger.warn('[SMS] No phone number provided — skipping SMS.');
       return;
     }
 
+    const shop = await this.getShopDetails();
+    const activeShopName = shopName || shop.name || 'Trinco Hardware & Electricals';
     const formattedPhone = this.normalizePhone(phoneNumber);
     const receiptUrl     = `${this.RECEIPT_BASE_URL}/receipt/${invoiceId}`;
     const message        =
-      `Thank you for your purchase from ${shopName}!\n` +
+      `Thank you for your purchase from ${activeShopName}!\n` +
       `View your invoice here:\n${receiptUrl}`;
 
     await this.sendRawSMS(formattedPhone, message);
@@ -97,11 +120,16 @@ export class SmsService {
     message?: string;
     leftoverCredit?: number;
     totalOutstanding?: number;
+    tenantId?: string;
   }) {
+    const shop = await this.getShopDetails(dto.tenantId);
+    const shopName = shop.name || 'Trinco Hardware & Electricals';
+    const shopPhone = shop.phone || '+94763539351';
+
     const textMessage = dto.message ||
-      `Futura Hardware: Dear ${dto.customerName || 'Customer'}, thank you for your purchase. ` +
+      `${shopName}: Dear ${dto.customerName || 'Customer'}, thank you for your purchase. ` +
       `Outstanding Credit Balance: Rs. ${Number(dto.totalOutstanding || 0).toLocaleString()}. ` +
-      `Please settle at your convenience. Info: futurahardware.com`;
+      `Please settle at your convenience. Tel: ${shopPhone}`;
 
     const success = await this.sendRawSMS(dto.phone, textMessage);
     return {
@@ -118,6 +146,10 @@ export class SmsService {
    */
   async sendBatchCreditReminders(tenantId?: string) {
     this.logger.log(`[SMS Batch] Initiating batch credit reminders for tenant=${tenantId}`);
+
+    const shop = await this.getShopDetails(tenantId);
+    const shopName = shop.name || 'Trinco Hardware & Electricals';
+    const shopPhone = shop.phone || '+94763539351';
 
     const whereClause: any = {};
     if (tenantId) {
@@ -153,9 +185,9 @@ export class SmsService {
       eligibleCount++;
 
       const message =
-        `Futura Hardware: Dear ${customer.name}, this is a friendly reminder that your current outstanding credit balance is ` +
+        `${shopName}: Dear ${customer.name}, this is a friendly reminder that your current outstanding credit balance is ` +
         `Rs. ${finalOutstanding.toLocaleString()}. Please visit the shop or contact us to settle your account. ` +
-        `Thank you! Info: futurahardware.com`;
+        `Tel: ${shopPhone}`;
 
       const delivered = await this.sendRawSMS(customer.phone, message);
       if (delivered) sentCount++;
