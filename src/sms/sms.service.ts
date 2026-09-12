@@ -9,7 +9,7 @@ export class SmsService {
   private readonly API_URL    = process.env.TEXTLK_API_URL || process.env.TEXT_LK_API_URL || 'https://app.text.lk/api/v3/sms/send';
   private readonly API_TOKEN  = process.env.TEXTLK_API_TOKEN || process.env.TEXT_LK_API_TOKEN || process.env.TEXT_LK_API_KEY || '5712|3BWcH4C9bFA69kplnjXmXlauJmxG1HIsPuXef5RF1eafd116';
   private readonly SENDER_ID  = process.env.TEXTLK_SENDER_ID || process.env.TEXT_LK_SENDER_ID || 'TrincoHW';
-  private readonly SHOP_NAME  = 'Futura Hardware';
+  private readonly SHOP_NAME  = 'Trinco Hardware & Electricals';
   private readonly RECEIPT_BASE_URL = process.env.FRONTEND_RECEIPT_URL || 'https://www.futurahardware.com';
 
   constructor(private prisma: PrismaService) {}
