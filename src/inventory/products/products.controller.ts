@@ -177,6 +177,12 @@ export class ProductsController {
     return this.productsService.deleteBrand(req.user.tenant_id, brandId);
   }
 
+  @Get('next-sku')
+  @ApiOperation({ summary: 'Get next available auto-generated SKU and Barcode' })
+  async getNextSku(@Req() req: AuthenticatedRequest) {
+    return this.productsService.getNextSku(req.user.tenant_id);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get all products' })
   @ApiResponse({ status: 200, description: 'List of products' })

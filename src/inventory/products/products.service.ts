@@ -58,12 +58,33 @@ export class ProductsService {
         throw new NotFoundException('Category not found');
       }
 
-      // 2. Validate SKU uniqueness
-      const existingSku = await this.prisma.product.findUnique({
-        where: { tenantId_sku: { tenantId, sku: dto.sku } },
+      // 2. Validate SKU uniqueness & auto-advance if colliding HKU_ auto-generated SKU
+      let finalSku = dto.sku;
+      let existingSku = await this.prisma.product.findUnique({
+        where: { tenantId_sku: { tenantId, sku: finalSku } },
       });
+
       if (existingSku) {
-        throw new BadRequestException('Product with this SKU already exists');
+        if (finalSku && finalSku.toUpperCase().startsWith('HKU_')) {
+          const allProducts = await this.prisma.product.findMany({
+            where: { tenantId },
+            select: { sku: true },
+          });
+          let maxNum = 0;
+          allProducts.forEach((p) => {
+            if (p.sku) {
+              const m = p.sku.match(/HKU_(\d+)/i);
+              if (m) {
+                const n = parseInt(m[1], 10);
+                if (n > maxNum) maxNum = n;
+              }
+            }
+          });
+          finalSku = `HKU_${maxNum + 1}`;
+          console.log(`[createProduct] SKU collision resolved: Auto-advanced SKU from ${dto.sku} to ${finalSku}`);
+        } else {
+          throw new BadRequestException('Product with this SKU already exists');
+        }
       }
 
       // 3. Create the product
@@ -71,7 +92,7 @@ export class ProductsService {
         data: {
           tenantId,
           name: dto.name,
-          sku: dto.sku,
+          sku: finalSku,
           description: dto.description,
           categoryId: categoryId,
           subcategoryId: dto.subcategoryId || undefined,
@@ -243,6 +264,51 @@ export class ProductsService {
     }
   }
 
+  async getNextSku(tenantId: string) {
+    const products = await this.prisma.product.findMany({
+      where: { tenantId },
+      select: { sku: true, barcode: true },
+    });
+
+    let maxSkuNum = 0;
+    const skuPattern = /^(?:HKU|SKU)_(\d+)$/i;
+
+    products.forEach((p) => {
+      if (p.sku && typeof p.sku === 'string') {
+        const match = p.sku.trim().match(skuPattern);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxSkuNum) {
+            maxSkuNum = num;
+          }
+        }
+      }
+    });
+
+    let maxBarcodeNum = 0;
+    const barcodePattern = /^200000(\d{6})$/;
+
+    products.forEach((p) => {
+      if (p.barcode && typeof p.barcode === 'string') {
+        const match = p.barcode.trim().match(barcodePattern);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxBarcodeNum) {
+            maxBarcodeNum = num;
+          }
+        }
+      }
+    });
+
+    const nextSkuNum = maxSkuNum + 1;
+    const nextBarcodeNum = maxBarcodeNum + 1;
+
+    return {
+      nextSku: `HKU_${nextSkuNum}`,
+      nextBarcode: `200000${String(nextBarcodeNum).padStart(6, '0')}`,
+    };
+  }
+
   async getProducts(tenantId: string) {
     return this.prisma.product.findMany({
       where: { tenantId, isActive: true },
@@ -378,22 +444,19 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    // Soft-delete strategy: mark the product inactive so all existing
-    // sales invoices, GRNs, and return records that reference this
-    // product keep their FK intact and historical data is preserved.
-    // Only inventory-only records (stock levels, movements, images,
-    // supplier links) are physically removed since they have no
-    // reporting value after the product is discontinued.
+    // Soft-delete strategy: mark the product inactive and append timestamp suffix to free SKU
+    const freedSku = `${product.sku}_DELETED_${Date.now()}`;
+
     await this.prisma.$transaction([
       // Remove inventory records that are safe to purge
       this.prisma.supplierProduct.deleteMany({ where: { productId } }),
       this.prisma.stockMovement.deleteMany({ where: { productId } }),
       this.prisma.stock.deleteMany({ where: { productId } }),
       this.prisma.productImage.deleteMany({ where: { productId } }),
-      // Soft-delete the product itself
+      // Soft-delete the product itself and release its SKU
       this.prisma.product.update({
         where: { id: productId },
-        data: { isActive: false },
+        data: { isActive: false, sku: freedSku },
       }),
     ]);
 
