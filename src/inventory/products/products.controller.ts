@@ -191,18 +191,22 @@ export class ProductsController {
   }
 
   @Patch(':id')
+  @UseInterceptors(FileInterceptor('imageFile'))
+  @ApiConsumes('multipart/form-data', 'application/json')
   @ApiOperation({ summary: 'Update an existing product' })
   @ApiResponse({ status: 200, description: 'Product updated successfully' })
   async updateProduct(
     @Param('id') id: string,
     @Body() dto: any,
     @Req() req: AuthenticatedRequest,
+    @UploadedFile() imageFile?: any,
   ) {
     return this.productsService.updateProduct(
       id,
       dto,
       req.user.tenant_id,
       req.user.sub,
+      imageFile,
     );
   }
 

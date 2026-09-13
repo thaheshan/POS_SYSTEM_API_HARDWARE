@@ -97,4 +97,12 @@ export class CreateProductDto {
   @IsUUID()
   @IsOptional()
   branchId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  minimumSellingPrice?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  comparePrice?: number;
 }
