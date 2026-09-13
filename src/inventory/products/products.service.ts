@@ -100,6 +100,7 @@ export class ProductsService {
           unitId: dto.unitId,
           purchasePrice: purchasePrice,
           sellingPrice: sellingPrice,
+          minimumSellingPrice: (dto as any).minimumSellingPrice ? Number((dto as any).minimumSellingPrice) : (dto as any).comparePrice ? Number((dto as any).comparePrice) : undefined,
           taxCategory: dto.taxCategory as any,
           taxRate: taxRate,
           minimumStockLevel: minimumStockLevel,
@@ -257,6 +258,21 @@ export class ProductsService {
         }
       }
 
+      // Link supplier if provided
+      const createSupplierId = (dto as any).supplierId ?? (dto as any).supplier_id;
+      if (createSupplierId && String(createSupplierId).trim() !== '') {
+        try {
+          await this.prisma.supplierProduct.create({
+            data: {
+              supplierId: String(createSupplierId).trim(),
+              productId: product.id,
+            },
+          });
+        } catch (sErr) {
+          console.error('Failed to link supplier product on creation:', sErr);
+        }
+      }
+
       return product;
     } catch (error) {
       console.error('Error in createProduct:', error);
@@ -318,6 +334,11 @@ export class ProductsService {
         brand: true,
         unit: true,
         images: true,
+        supplierProducts: {
+          include: {
+            supplier: true,
+          },
+        },
       },
     });
   }
@@ -468,6 +489,7 @@ export class ProductsService {
     dto: any,
     tenantId: string,
     updatedBy: string,
+    imageFile?: any,
   ) {
     try {
       console.log('Updating product ID:', productId, 'with DTO:', dto);
@@ -500,93 +522,142 @@ export class ProductsService {
         }
       }
 
-      // Parse numbers safely
-      const purchasePrice =
-        dto.purchasePrice !== undefined ? Number(dto.purchasePrice) : undefined;
-      const sellingPrice =
-        dto.sellingPrice !== undefined ? Number(dto.sellingPrice) : undefined;
-      const minimumStockLevel =
-        dto.minimumStockLevel !== undefined
-          ? Number(dto.minimumStockLevel)
-          : undefined;
-      const maximumStockLevel =
-        dto.maximumStockLevel !== undefined
-          ? Number(dto.maximumStockLevel)
+      // Safe UUID helper (returns null for empty strings/undefined strings to avoid PostgreSQL UUID syntax errors)
+      const parseUuid = (val: any) =>
+        val && typeof val === 'string' && val.trim() !== '' && val !== 'undefined' && val !== 'null'
+          ? val.trim()
+          : null;
+
+      // Safe boolean helper
+      const parseBool = (val: any) => {
+        if (val === undefined || val === null || val === 'undefined' || val === 'null') return undefined;
+        if (typeof val === 'boolean') return val;
+        if (typeof val === 'string') return val.toLowerCase() === 'true' || val === '1';
+        if (typeof val === 'number') return val === 1;
+        return Boolean(val);
+      };
+
+      // Safe number helper
+      const parseNum = (val: any) =>
+        val !== undefined && val !== null && val !== '' && val !== 'undefined' && val !== 'null' && !isNaN(Number(val))
+          ? Number(val)
           : undefined;
 
-      const maxAllowedDiscount =
-        dto.maxAllowedDiscount !== undefined
-          ? Number(dto.maxAllowedDiscount)
-          : undefined;
-      const defaultDiscountValue =
-        dto.defaultDiscountValue !== undefined
-          ? Number(dto.defaultDiscountValue)
-          : undefined;
+      // Safe Enum helper
+      const parseDiscountType = (val: any) =>
+        val === 'PERCENTAGE' || val === 'FIXED_AMOUNT' ? val : null;
 
-      // Update product core fields
+      // Update product core fields safely
       const product = await this.prisma.product.update({
         where: { id: productId },
         data: {
-          name: dto.name,
-          sku: dto.sku,
-          description: dto.description,
-          categoryId: dto.categoryId || undefined,
-          subcategoryId: dto.subcategoryId !== undefined ? dto.subcategoryId : dto.subCategoryId !== undefined ? dto.subCategoryId : undefined,
-          brandId: dto.brandId || undefined,
-          unitId: dto.unitId,
-          measurementUnit: dto.measurementUnit !== undefined ? dto.measurementUnit : undefined,
-          purchasePrice: purchasePrice,
-          sellingPrice: sellingPrice,
-          minimumStockLevel: minimumStockLevel,
-          maximumStockLevel: maximumStockLevel,
-          maxAllowedDiscount: maxAllowedDiscount,
-          defaultDiscountValue: defaultDiscountValue,
-          discountType: dto.discountType || undefined,
-          isDiscountEnabled: dto.isDiscountEnabled !== undefined ? Boolean(dto.isDiscountEnabled) : undefined,
-          isDiscountApproved: dto.isDiscountApproved !== undefined ? Boolean(dto.isDiscountApproved) : undefined,
+          name: dto.name !== undefined ? String(dto.name).trim() : undefined,
+          sku: dto.sku !== undefined ? String(dto.sku).trim() : undefined,
+          barcode:
+            dto.barcode !== undefined && dto.barcode !== null
+              ? String(dto.barcode).trim() !== '' && dto.barcode !== 'undefined' && dto.barcode !== 'null'
+                ? String(dto.barcode).trim()
+                : null
+              : undefined,
+          description: dto.description !== undefined ? String(dto.description).trim() : undefined,
+          categoryId: parseUuid(dto.categoryId) || undefined,
+          subcategoryId: parseUuid(dto.subcategoryId ?? dto.subCategoryId),
+          brandId: parseUuid(dto.brandId),
+          unitId: parseUuid(dto.unitId),
+          sellType: dto.sellType || dto.productType || undefined,
+          measurementUnit:
+            dto.measurementUnit !== undefined && dto.measurementUnit !== 'undefined' && dto.measurementUnit !== 'null'
+              ? dto.measurementUnit
+              : undefined,
+          purchasePrice: parseNum(dto.purchasePrice ?? dto.costPrice),
+          sellingPrice: parseNum(dto.sellingPrice ?? dto.unitCost),
+          minimumSellingPrice: parseNum(dto.minimumSellingPrice ?? dto.comparePrice ?? dto.compareAtPrice),
+          taxRate: parseNum(dto.taxRate),
+          minimumStockLevel: parseNum(dto.minimumStockLevel ?? dto.minLevel),
+          maximumStockLevel: parseNum(dto.maximumStockLevel ?? dto.maxLevel),
+          maxAllowedDiscount: parseNum(dto.maxAllowedDiscount),
+          defaultDiscountValue: parseNum(dto.defaultDiscountValue),
+          discountType: parseDiscountType(dto.discountType),
+          isActive:
+            dto.status !== undefined
+              ? String(dto.status).toUpperCase() === 'ACTIVE'
+              : parseBool(dto.isActive),
+          isDiscountEnabled: parseBool(dto.isDiscountEnabled),
+          isDiscountApproved: parseBool(dto.isDiscountApproved),
+          hasSecondaryDiscount: parseBool(dto.hasSecondaryDiscount),
+          secondaryDiscountType: parseDiscountType(dto.secondaryDiscountType),
+          maxSecondaryDiscount: parseNum(dto.maxSecondaryDiscount),
+          defaultSecondaryDiscount: parseNum(dto.defaultSecondaryDiscount),
         },
       });
 
-      // Update stock quantity and warehouse if provided
-      if (dto.qty !== undefined && dto.warehouseId) {
+      // Update supplier association if supplierId was passed in DTO
+      if (dto.supplierId !== undefined || dto.supplier_id !== undefined) {
+        const targetSupplierId = parseUuid(dto.supplierId ?? dto.supplier_id);
+        await this.prisma.supplierProduct.deleteMany({
+          where: { productId },
+        });
+        if (targetSupplierId) {
+          await this.prisma.supplierProduct.create({
+            data: {
+              supplierId: targetSupplierId,
+              productId,
+            },
+          });
+        }
+      }
+
+      // Update stock quantity if provided
+      if (dto.qty !== undefined && dto.qty !== null && dto.qty !== '' && dto.qty !== 'undefined' && dto.qty !== 'null') {
         const targetQuantity = Number(dto.qty);
+        let targetWarehouseId = parseUuid(dto.warehouseId);
 
-        // Find existing stock for this product + warehouse
-        const existingStock = await this.prisma.stock.findFirst({
-          where: {
-            productId,
-            warehouseId: dto.warehouseId,
-            tenantId,
-          },
-        });
+        // If warehouseId wasn't passed, find existing stock record or default warehouse
+        if (!targetWarehouseId) {
+          const existingStock = await this.prisma.stock.findFirst({
+            where: { productId, tenantId },
+          });
+          if (existingStock) {
+            targetWarehouseId = existingStock.warehouseId;
+          } else {
+            const firstWh = await this.prisma.warehouse.findFirst({
+              where: { tenantId },
+            });
+            if (firstWh) targetWarehouseId = firstWh.id;
+          }
+        }
 
-        const warehouse = await this.prisma.warehouse.findUnique({
-          where: { id: dto.warehouseId },
-        });
-        const branchId = warehouse?.branchId;
+        if (targetWarehouseId) {
+          const existingStock = await this.prisma.stock.findFirst({
+            where: { productId, warehouseId: targetWarehouseId, tenantId },
+          });
 
-        if (branchId) {
+          const warehouse = await this.prisma.warehouse.findUnique({
+            where: { id: targetWarehouseId },
+          });
+          const branchId = warehouse?.branchId;
+
           if (existingStock) {
             const beforeQty = Number(existingStock.quantity);
             const diff = targetQuantity - beforeQty;
 
             if (diff !== 0) {
-              // Update stock
               await this.prisma.stock.update({
                 where: { id: existingStock.id },
                 data: {
                   quantity: targetQuantity,
-                  availableQuantity:
-                    targetQuantity - Number(existingStock.reservedQuantity),
+                  availableQuantity: Math.max(
+                    0,
+                    targetQuantity - Number(existingStock.reservedQuantity || 0),
+                  ),
                 },
               });
 
-              // Create stock movement
               await this.prisma.stockMovement.create({
                 data: {
                   tenantId,
                   productId,
-                  warehouseId: dto.warehouseId,
+                  warehouseId: targetWarehouseId,
                   movementType: 'ADJUSTMENT',
                   quantity: diff,
                   beforeQuantity: beforeQty,
@@ -598,25 +669,23 @@ export class ProductsService {
                 },
               });
             }
-          } else {
-            // Create stock
+          } else if (branchId) {
             await this.prisma.stock.create({
               data: {
                 tenantId,
                 productId,
-                warehouseId: dto.warehouseId,
+                warehouseId: targetWarehouseId,
                 branchId,
                 quantity: targetQuantity,
                 availableQuantity: targetQuantity,
               },
             });
 
-            // Create stock movement
             await this.prisma.stockMovement.create({
               data: {
                 tenantId,
                 productId,
-                warehouseId: dto.warehouseId,
+                warehouseId: targetWarehouseId,
                 movementType: 'IN',
                 quantity: targetQuantity,
                 beforeQuantity: 0,
@@ -632,9 +701,14 @@ export class ProductsService {
       }
 
       return product;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in updateProduct:', error);
-      throw error;
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error?.message || 'Failed to update product details. Check inputs.',
+      );
     }
   }
 

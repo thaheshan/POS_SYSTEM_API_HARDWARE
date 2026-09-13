@@ -14,17 +14,7 @@ import { calculateStockStatus } from 'src/utils/stockHelper';
 type StockOverviewPayload = Prisma.StockGetPayload<{
   include: {
     product: {
-      select: {
-        name: true;
-        sku: true;
-        minimumStockLevel: true;
-        sellingPrice: true;
-        purchasePrice: true;
-        sellType: true;
-        measurementUnit: true;
-        categoryId: true;
-        subcategoryId: true;
-        brandId: true;
+      include: {
         category: { select: { id: true; name: true } };
         subCategory: { select: { id: true; name: true } };
         brand: { select: { id: true; name: true } };
@@ -32,6 +22,11 @@ type StockOverviewPayload = Prisma.StockGetPayload<{
           select: { imageUrl: true; isPrimary: true };
           orderBy: { isPrimary: 'desc' };
           take: 1;
+        };
+        supplierProducts: {
+          include: {
+            supplier: true;
+          };
         };
       };
     };
@@ -57,17 +52,7 @@ export class StockService {
       where: whereClause,
       include: {
         product: {
-          select: {
-            name: true,
-            sku: true,
-            minimumStockLevel: true,
-            sellingPrice: true,
-            purchasePrice: true,
-            sellType: true,
-            measurementUnit: true,
-            categoryId: true,
-            subcategoryId: true,
-            brandId: true,
+          include: {
             category: { select: { id: true, name: true } },
             subCategory: { select: { id: true, name: true } },
             brand: { select: { id: true, name: true } },
@@ -75,6 +60,11 @@ export class StockService {
               select: { imageUrl: true, isPrimary: true },
               orderBy: { isPrimary: 'desc' },
               take: 1,
+            },
+            supplierProducts: {
+              include: {
+                supplier: true,
+              },
             },
           },
         },
@@ -111,17 +101,7 @@ export class StockService {
       },
       include: {
         product: {
-          select: {
-            name: true,
-            sku: true,
-            minimumStockLevel: true,
-            sellingPrice: true,
-            purchasePrice: true,
-            sellType: true,
-            measurementUnit: true,
-            categoryId: true,
-            subcategoryId: true,
-            brandId: true,
+          include: {
             category: { select: { id: true, name: true } },
             subCategory: { select: { id: true, name: true } },
             brand: { select: { id: true, name: true } },
@@ -129,6 +109,11 @@ export class StockService {
               select: { imageUrl: true, isPrimary: true },
               orderBy: { isPrimary: 'desc' },
               take: 1,
+            },
+            supplierProducts: {
+              include: {
+                supplier: true,
+              },
             },
           },
         },
@@ -546,14 +531,21 @@ export class StockService {
       warehouse_name: stock.warehouse?.name,
       product_name: stock.product.name,
       sku: stock.product.sku,
-      selling_price: Number(stock.product.sellingPrice),
-      purchase_price: Number(stock.product.purchasePrice ?? 0),
+      selling_price: Number(String(stock.product.sellingPrice ?? 0)),
+      purchase_price: Number(String(stock.product.purchasePrice ?? 0)),
+      minimum_selling_price: stock.product?.minimumSellingPrice ? Number(String(stock.product.minimumSellingPrice)) : 0,
+      minimumSellingPrice: stock.product?.minimumSellingPrice ? Number(String(stock.product.minimumSellingPrice)) : 0,
+      comparePrice: stock.product?.minimumSellingPrice ? Number(String(stock.product.minimumSellingPrice)) : 0,
       category_id: stock.product.categoryId,
       category_name: stock.product.category?.name || 'All',
       subcategory_id: stock.product.subcategoryId || null,
       subcategory_name: stock.product.subCategory?.name || '—',
       brand_id: stock.product.brandId || null,
       brand_name: stock.product.brand?.name || '—',
+      supplier_id: (stock.product as any)?.supplierProducts?.[0]?.supplierId || null,
+      supplierId: (stock.product as any)?.supplierProducts?.[0]?.supplierId || null,
+      supplier_name: (stock.product as any)?.supplierProducts?.[0]?.supplier?.name || null,
+      supplierName: (stock.product as any)?.supplierProducts?.[0]?.supplier?.name || null,
       image_url: (stock.product as any).images?.[0]?.imageUrl ?? null,
       quantity,
       reserved_quantity: reserved,
@@ -566,6 +558,7 @@ export class StockService {
       out_of_stock: stockStatus.out_of_stock,
       sellType: stock.product.sellType,
       measurementUnit: stock.product.measurementUnit,
+      product: stock.product,
     };
   }
   private applyDynamicFilters(
