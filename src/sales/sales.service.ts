@@ -325,17 +325,21 @@ export class SalesService {
 
             let maxAllowedAmount = 0;
             const maxAllowedDiscount = Number(product.maxAllowedDiscount ?? 0);
-            if (product.discountType === 'PERCENTAGE') {
+            const isPercentage =
+              !product.discountType ||
+              String(product.discountType).toUpperCase() === 'PERCENTAGE' ||
+              String(product.discountType).toUpperCase() === 'PERCENT';
+
+            if (isPercentage) {
               maxAllowedAmount = (regularPrice * maxAllowedDiscount) / 100;
             } else {
               maxAllowedAmount = maxAllowedDiscount;
             }
 
             if (appliedDiscount - maxAllowedAmount > 0.01) {
-              const formattedLimit =
-                product.discountType === 'PERCENTAGE'
-                  ? `${maxAllowedDiscount}%`
-                  : `Rs. ${maxAllowedDiscount}`;
+              const formattedLimit = isPercentage
+                ? `${maxAllowedDiscount}% (Rs. ${maxAllowedAmount.toFixed(2)})`
+                : `Rs. ${maxAllowedDiscount}`;
               throw new BadRequestException(
                 `Applied discount of Rs. ${appliedDiscount.toFixed(2)} on product "${product.name}" exceeds the maximum allowed limit of ${formattedLimit}`,
               );
@@ -469,11 +473,17 @@ export class SalesService {
         const paymentStatus = balanceAddition <= 0 ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'UNPAID');
         const saleTypeVal = isCreditSale ? 'CREDIT' : 'CASH';
 
+        const isValidUuid = (val: any) =>
+          typeof val === 'string' &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+
+        const validCustomerId = isValidUuid(dto.customerId) ? String(dto.customerId).trim() : null;
+
         const invoice = await tx.salesInvoice.create({
           data: {
             tenantId,
             branchId: resolvedBranchId,
-            customerId: dto.customerId ?? null,
+            customerId: validCustomerId,
             invoiceNumber,
             invoiceDate: now,
             invoiceTime: now,
@@ -507,14 +517,19 @@ export class SalesService {
         });
 
         // --- Update Customer Totals ---
-        if (dto.customerId) {
-          await tx.customer.update({
-            where: { id: dto.customerId },
-            data: {
-              totalPurchases: { increment: totalAmount },
-              outstandingBalance: { increment: balanceAddition },
-            },
+        if (validCustomerId) {
+          const existingCustomer = await tx.customer.findUnique({
+            where: { id: validCustomerId },
           });
+          if (existingCustomer) {
+            await tx.customer.update({
+              where: { id: validCustomerId },
+              data: {
+                totalPurchases: { increment: totalAmount },
+                outstandingBalance: { increment: balanceAddition },
+              },
+            });
+          }
         }
 
         this.logger.log(`Invoice created: ${invoice.id}, total=${totalAmount}`);
@@ -526,6 +541,9 @@ export class SalesService {
           totalAmount,
           message: 'Checkout completed successfully',
         };
+      }, {
+        maxWait: 15000,
+        timeout: 30000,
       });
     } catch (error) {
       this.logger.error('CHECKOUT FAILED:', error?.message || error);

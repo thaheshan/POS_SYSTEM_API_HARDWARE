@@ -22,9 +22,11 @@ export class PrismaService
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false },
+      max: 10, // Keep connection count under Supabase Session Mode pool_size limit (15)
       keepAlive: true,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 5000,
+      allowExitOnIdle: true,
     });
 
     const adapter = new PrismaPg(pool);

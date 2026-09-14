@@ -1,4 +1,4 @@
-import { Controller, Get, Req, UseGuards, Query, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, UseGuards, Query, ForbiddenException } from '@nestjs/common';
 import { ActivityLogsService } from './activity-logs.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -22,5 +22,19 @@ export class ActivityLogsController {
       throw new ForbiddenException('Only shop owners and admins can access activity logs.');
     }
     return this.activityLogsService.findAll(req.user.tenant_id, startDate, endDate, searchUser);
+  }
+
+  @Post()
+  async createLog(@Req() req: any, @Body() body: any) {
+    const tenantId = req.user.tenant_id;
+    const userId = req.user.sub || req.user.userId || req.user.user_id;
+    await this.activityLogsService.log(
+      tenantId,
+      userId,
+      body.action || 'ACTIVITY',
+      body.details || '',
+      body.amount !== undefined && body.amount !== null ? Number(body.amount) : undefined,
+    );
+    return { success: true };
   }
 }

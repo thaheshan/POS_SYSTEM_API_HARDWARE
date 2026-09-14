@@ -502,31 +502,40 @@ export class ProductsService {
         throw new NotFoundException('Product not found');
       }
 
+      // Safe UUID helper (returns undefined if val is undefined, returns null for non-UUID strings to avoid PostgreSQL UUID syntax errors)
+      const parseUuid = (val: any) => {
+        if (val === undefined) return undefined;
+        if (val && typeof val === 'string') {
+          const trimmed = val.trim();
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (uuidRegex.test(trimmed)) {
+            return trimmed;
+          }
+        }
+        return null;
+      };
+
       // If SKU is being changed, check if new SKU is already in use by another product
-      if (dto.sku && dto.sku !== existingProduct.sku) {
-        const existingSku = await this.prisma.product.findUnique({
-          where: { tenantId_sku: { tenantId, sku: dto.sku } },
+      if (dto.sku && String(dto.sku).trim() !== String(existingProduct.sku || '').trim()) {
+        const targetSku = String(dto.sku).trim();
+        const existingSku = await this.prisma.product.findFirst({
+          where: { tenantId, sku: targetSku, NOT: { id: productId } },
         });
         if (existingSku) {
           throw new BadRequestException('Product with this SKU already exists');
         }
       }
 
-      // If categoryId is provided, verify it exists
-      if (dto.categoryId) {
+      // If categoryId is provided, verify it exists using parseUuid
+      const targetCatId = parseUuid(dto.categoryId);
+      if (targetCatId) {
         const category = await this.prisma.category.findUnique({
-          where: { id: dto.categoryId },
+          where: { id: targetCatId },
         });
         if (!category || category.tenantId !== tenantId) {
           throw new NotFoundException('Category not found');
         }
       }
-
-      // Safe UUID helper (returns null for empty strings/undefined strings to avoid PostgreSQL UUID syntax errors)
-      const parseUuid = (val: any) =>
-        val && typeof val === 'string' && val.trim() !== '' && val !== 'undefined' && val !== 'null'
-          ? val.trim()
-          : null;
 
       // Safe boolean helper
       const parseBool = (val: any) => {
@@ -544,8 +553,14 @@ export class ProductsService {
           : undefined;
 
       // Safe Enum helper
-      const parseDiscountType = (val: any) =>
-        val === 'PERCENTAGE' || val === 'FIXED_AMOUNT' ? val : null;
+      const parseDiscountType = (val: any) => {
+        if (val === undefined) return undefined;
+        if (!val || val === 'null' || val === 'undefined') return undefined;
+        const str = String(val).toUpperCase();
+        if (str === 'PERCENTAGE' || str === 'PERCENT') return 'PERCENTAGE';
+        if (str === 'FIXED_AMOUNT' || str === 'FIXED' || str === 'FIXED_VALUE') return 'FIXED_AMOUNT';
+        return undefined;
+      };
 
       // Update product core fields safely
       const product = await this.prisma.product.update({
@@ -590,6 +605,52 @@ export class ProductsService {
           defaultSecondaryDiscount: parseNum(dto.defaultSecondaryDiscount),
         },
       });
+
+      // Handle Image File upload or image URL / Base64 string update
+      let uploadedImageUrl: string | null = null;
+      if (imageFile && this.storage) {
+        try {
+          const fileExt = imageFile.originalname ? imageFile.originalname.split('.').pop() : 'jpg';
+          const fileName = `${tenantId}/${product.id}_${Date.now()}.${fileExt}`;
+          const { data, error } = await this.storage
+            .from('product-images')
+            .upload(fileName, imageFile.buffer, {
+              contentType: imageFile.mimetype || 'image/jpeg',
+              upsert: true,
+            });
+
+          if (!error) {
+            const { data: publicUrlData } = this.storage
+              .from('product-images')
+              .getPublicUrl(fileName);
+            if (publicUrlData && publicUrlData.publicUrl) {
+              uploadedImageUrl = publicUrlData.publicUrl;
+            }
+          }
+        } catch (uploadError) {
+          console.error('Exception during image upload in updateProduct:', uploadError);
+        }
+      } else if (dto.image || dto.imageUrl || dto.image_url) {
+        uploadedImageUrl = dto.image || dto.imageUrl || dto.image_url;
+      }
+
+      if (uploadedImageUrl) {
+        try {
+          await this.prisma.productImage.updateMany({
+            where: { productId },
+            data: { isPrimary: false },
+          });
+          await this.prisma.productImage.create({
+            data: {
+              productId,
+              imageUrl: uploadedImageUrl,
+              isPrimary: true,
+            },
+          });
+        } catch (imgErr) {
+          console.error('Failed to link updated image to product in DB:', imgErr);
+        }
+      }
 
       // Update supplier association if supplierId was passed in DTO
       if (dto.supplierId !== undefined || dto.supplier_id !== undefined) {

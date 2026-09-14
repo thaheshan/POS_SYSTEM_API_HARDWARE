@@ -236,6 +236,9 @@ export class AdvancedSalesService {
         totalRefund,
         message: 'Return processed and stock restored successfully.',
       };
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
 
     await this.activityLogsService.log(
@@ -793,6 +796,9 @@ export class AdvancedSalesService {
           ? `Exchange complete. Customer owes Rs. ${dto.delta}.`
           : `Exchange complete. Refund Rs. ${Math.abs(dto.delta)} due to customer.`,
       };
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
 
     await this.activityLogsService.log(
