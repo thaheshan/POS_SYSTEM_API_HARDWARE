@@ -24,9 +24,12 @@ export class PrismaService
       ssl: { rejectUnauthorized: false },
       max: 10, // Keep connection count under Supabase Session Mode pool_size limit (15)
       keepAlive: true,
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 5000,
-      allowExitOnIdle: true,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 15000,
+    });
+
+    pool.on('error', (err) => {
+      this.logger.warn(`Unexpected pg pool client error: ${err.message}`);
     });
 
     const adapter = new PrismaPg(pool);

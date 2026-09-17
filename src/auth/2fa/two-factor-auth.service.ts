@@ -47,10 +47,10 @@ export class TwoFactorAuthService {
     };
 
     const access_token = await this.jwtService.signAsync(payload, {
-      expiresIn: '30m',
+      expiresIn: '365d',
     });
     const refresh_token = await this.jwtService.signAsync(payload, {
-      expiresIn: '7d',
+      expiresIn: '365d',
     });
 
     return {
