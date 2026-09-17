@@ -469,8 +469,9 @@ export class AuthService {
         tenant_id: user.tenant_id,
       };
 
-      const access_token = await this.jwtService.signAsync(payload);
-      const refresh_token = await this.jwtService.signAsync(payload, { expiresIn: '7d' });
+      const jwtExpiry = (this.configService.get<string>('JWT_EXPIRES_IN') || '365d') as any;
+      const access_token = await this.jwtService.signAsync(payload, { expiresIn: jwtExpiry });
+      const refresh_token = await this.jwtService.signAsync(payload, { expiresIn: jwtExpiry });
 
       // shopInfo is already fetched above
 
