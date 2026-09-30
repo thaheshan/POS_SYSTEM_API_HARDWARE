@@ -118,7 +118,7 @@ export class SalesService {
     };
   }
 
-  async updateSale(tenantId: string, id: string, data: any) {
+  async updateSale(tenantId: string, id: string, data: any, userId?: string) {
     const isUuid =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         id,
@@ -128,81 +128,246 @@ export class SalesService {
         tenantId,
         ...(isUuid ? { id } : { invoiceNumber: id }),
       },
-      include: { items: true },
+      include: { items: true, customer: true },
     });
 
     if (!invoice) {
       throw new BadRequestException('Invoice not found');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Update basic customer info if requested
-      if (invoice.customerId && (data.customerName || data.customerPhone)) {
-        await tx.customer.update({
-          where: { id: invoice.customerId },
-          data: {
-            name:
-              data.customerName !== undefined ? data.customerName : undefined,
-            phone:
-              data.customerPhone !== undefined ? data.customerPhone : undefined,
-          },
-        });
+    const oldTotalAmount = Number(invoice.totalAmount);
+    const oldBalance = Number(invoice.balance);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Customer details update or auto-link
+      let targetCustomerId = invoice.customerId;
+
+      if (targetCustomerId) {
+        if (data.customerName || data.customerPhone || data.customerEmail) {
+          await tx.customer.update({
+            where: { id: targetCustomerId },
+            data: {
+              name:
+                data.customerName !== undefined && data.customerName !== ''
+                  ? data.customerName
+                  : undefined,
+              phone:
+                data.customerPhone !== undefined && data.customerPhone !== ''
+                  ? data.customerPhone
+                  : undefined,
+              email:
+                data.customerEmail !== undefined && data.customerEmail !== ''
+                  ? data.customerEmail
+                  : undefined,
+            },
+          });
+        }
+      } else if (data.customerName || data.customerPhone) {
+        // Try linking an existing customer or creating a new one
+        const cPhone = data.customerPhone?.trim();
+        let foundCustomer = cPhone
+          ? await tx.customer.findFirst({ where: { tenantId, phone: cPhone } })
+          : null;
+
+        if (!foundCustomer && data.customerName?.trim()) {
+          foundCustomer = await tx.customer.create({
+            data: {
+              tenantId,
+              name: data.customerName.trim(),
+              phone: cPhone || '—',
+              email: data.customerEmail?.trim() || null,
+            },
+          });
+        }
+
+        if (foundCustomer) {
+          targetCustomerId = foundCustomer.id;
+        }
       }
 
       let newSubtotal = Number(invoice.subtotal);
       let newTax = Number(invoice.taxAmount ?? 0);
 
-      // 2. If new items are provided, replace the old items
+      // 2. If new items are provided, perform stock reversion & re-deduction
       if (data.items && Array.isArray(data.items)) {
+        // A. Revert stock for all existing items on this invoice
+        for (const oldItem of invoice.items) {
+          const oldQty = Number(oldItem.quantity);
+          if (oldQty <= 0) continue;
+
+          const stockRecord = await tx.stock.findFirst({
+            where: {
+              productId: oldItem.productId,
+              tenantId,
+              warehouseId: oldItem.warehouseId,
+            },
+          });
+
+          if (stockRecord) {
+            await tx.stock.update({
+              where: { id: stockRecord.id },
+              data: {
+                quantity: { increment: oldQty },
+                availableQuantity: { increment: oldQty },
+              },
+            });
+
+            await tx.stockMovement.create({
+              data: {
+                tenantId,
+                productId: oldItem.productId,
+                warehouseId: oldItem.warehouseId,
+                movementType: 'IN',
+                quantity: oldQty,
+                beforeQuantity: stockRecord.quantity,
+                afterQuantity: Number(stockRecord.quantity) + oldQty,
+                referenceType: 'INVOICE_EDIT_REVERSAL',
+                referenceId: invoice.id,
+                createdBy: userId || null,
+                notes: `Stock reverted for invoice edit ${invoice.invoiceNumber}`,
+              },
+            });
+          }
+        }
+
+        // B. Delete old invoice line items
         await tx.salesInvoiceItem.deleteMany({
           where: { invoiceId: invoice.id },
         });
 
+        // C. Process new items and deduct stock
         newSubtotal = 0;
         newTax = 0;
         const lineItems: any[] = [];
 
         for (const it of data.items) {
-          const product = await tx.product.findFirst({
-            where: { id: it.productId, tenantId },
-          });
+          // Resolve product (support ID or name/SKU lookup)
+          let product: any = null;
+          if (
+            it.productId &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              it.productId,
+            )
+          ) {
+            product = await tx.product.findFirst({
+              where: { id: it.productId, tenantId },
+            });
+          }
+          if (!product && it.productName) {
+            product = await tx.product.findFirst({
+              where: {
+                tenantId,
+                OR: [
+                  { name: { equals: it.productName, mode: 'insensitive' } },
+                  {
+                    sku: {
+                      equals: it.sku || it.productName,
+                      mode: 'insensitive',
+                    },
+                  },
+                ],
+              },
+            });
+          }
 
-          if (!product) continue;
+          if (!product) {
+            this.logger.warn(
+              `Product not found for item: ${it.productName || it.productId}`,
+            );
+            continue;
+          }
 
           const unitPrice = Number(it.unitPrice ?? product.sellingPrice);
-          const qty = Number(it.quantity ?? 1);
-          const lineTotal = unitPrice * qty;
+          const qty = Number(it.quantity ?? it.qty ?? 1);
+          if (qty <= 0) continue;
+
+          const itemDiscount = Number(it.discountAmount ?? it.discount ?? 0);
+          const grossLineTotal = Number((unitPrice * qty).toFixed(2));
+          const lineTotal = Math.max(0, Number((grossLineTotal - itemDiscount).toFixed(2)));
           const taxRate = Number(product.taxRate ?? 0);
+          const basePrice = Number((lineTotal / (1 + taxRate / 100)).toFixed(2));
+          const taxAmount = Number((lineTotal - basePrice).toFixed(2));
 
-          // Tax Inclusive Calculation: Extract tax from the sticker price
-          const basePrice = lineTotal / (1 + taxRate / 100);
-          const taxAmount = lineTotal - basePrice;
+          newSubtotal = Number((newSubtotal + lineTotal).toFixed(2));
+          newTax = Number((newTax + taxAmount).toFixed(2));
 
-          newSubtotal += lineTotal;
-          newTax += taxAmount;
+          // Resolve stock & warehouse
+          let stockRecord = await tx.stock.findFirst({
+            where: {
+              productId: product.id,
+              tenantId,
+              ...(it.warehouseId ? { warehouseId: it.warehouseId } : {}),
+            },
+          });
 
-          const existingWarehouseId = (invoice as any).items?.[0]?.warehouseId;
-          let warehouseId = existingWarehouseId;
+          if (!stockRecord) {
+            stockRecord = await tx.stock.findFirst({
+              where: { productId: product.id, tenantId },
+            });
+          }
+
+          let warehouseId =
+            stockRecord?.warehouseId || (invoice as any).items?.[0]?.warehouseId;
           if (!warehouseId) {
             const wh = await tx.warehouse.findFirst({ where: { tenantId } });
-            if (!wh) continue;
-            warehouseId = wh.id;
+            if (wh) warehouseId = wh.id;
+          }
+
+          if (stockRecord) {
+            const available =
+              stockRecord.availableQuantity != null
+                ? Number(stockRecord.availableQuantity)
+                : Number(stockRecord.quantity) -
+                  Number(stockRecord.reservedQuantity);
+
+            if (available < qty) {
+              throw new BadRequestException(
+                `Insufficient stock for "${product.name}". Available: ${available}, Requested: ${qty}`,
+              );
+            }
+
+            // Deduct stock
+            await tx.stock.update({
+              where: { id: stockRecord.id },
+              data: {
+                quantity: { decrement: qty },
+                availableQuantity: { decrement: qty },
+              },
+            });
+
+            await tx.stockMovement.create({
+              data: {
+                tenantId,
+                productId: product.id,
+                warehouseId: stockRecord.warehouseId,
+                movementType: 'OUT',
+                quantity: -qty,
+                beforeQuantity: stockRecord.quantity,
+                afterQuantity: Number(stockRecord.quantity) - qty,
+                referenceType: 'INVOICE_EDIT',
+                referenceId: invoice.id,
+                createdBy: userId || null,
+                notes: `Deducted stock for invoice edit ${invoice.invoiceNumber}`,
+              },
+            });
           }
 
           const purchasePrice = Number(product.purchasePrice ?? 0);
-          const costPriceTotal = purchasePrice * qty;
-          const profit = lineTotal - costPriceTotal;
+          const costPriceTotal = Number((purchasePrice * qty).toFixed(2));
+          const profit = Number((lineTotal - costPriceTotal).toFixed(2));
 
           lineItems.push({
-            productId: it.productId,
+            productId: product.id,
+            productName: product.name,
             quantity: qty,
             unitPrice,
+            discountAmount: itemDiscount,
             lineTotal,
             taxRate,
             taxAmount,
-            warehouseId,
+            warehouseId: warehouseId || stockRecord?.warehouseId,
             costPrice: purchasePrice,
-            profit: profit,
+            profit,
           });
         }
 
@@ -216,30 +381,75 @@ export class SalesService {
         }
       }
 
-      // 3. Update the main invoice record
+      // 3. Recalculate main invoice record
       const discount =
         data.discount !== undefined
           ? Number(data.discount)
-          : Number(invoice.discountAmount);
-      // Total amount is simply Subtotal minus discount. Tax is already included inside the Subtotal.
-      const totalAmount = newSubtotal - discount;
+          : data.discountAmount !== undefined
+          ? Number(data.discountAmount)
+          : Number(invoice.discountAmount || 0);
+      const totalAmount = Number((newSubtotal - discount).toFixed(2));
+      if (totalAmount < 0) {
+        throw new BadRequestException('Invoice total cannot be negative');
+      }
+
+      const totalDelta = totalAmount - oldTotalAmount;
+      const newPaidAmount = Number(invoice.paidAmount);
+      const newBalance = Math.max(0, totalAmount - newPaidAmount);
+      const balanceDelta = newBalance - oldBalance;
+      const paymentStatus =
+        newBalance <= 0 ? 'PAID' : newPaidAmount > 0 ? 'PARTIAL' : 'UNPAID';
 
       await tx.salesInvoice.update({
         where: { id: invoice.id },
         data: {
-          notes: data.notes ?? invoice.notes,
+          customerId: targetCustomerId,
+          notes: data.notes !== undefined ? data.notes : invoice.notes,
           discountAmount: discount,
           subtotal: newSubtotal,
           taxAmount: newTax,
           totalAmount: totalAmount,
+          balance: newBalance,
+          paymentStatus: paymentStatus as any,
         },
       });
 
+      // 4. Update customer aggregate purchases and balance if linked
+      if (targetCustomerId) {
+        await tx.customer.update({
+          where: { id: targetCustomerId },
+          data: {
+            totalPurchases: { increment: totalDelta },
+            outstandingBalance: { increment: balanceDelta },
+          },
+        });
+      }
+
       return {
         success: true,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        totalAmount,
         message: 'Invoice updated successfully',
       };
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
+
+    // Fire activity log
+    if (userId) {
+      await this.activityLogsService
+        .log(
+          tenantId,
+          userId,
+          'UPDATE_SALE',
+          `Updated Invoice ${result.invoiceNumber}. New Total: Rs. ${result.totalAmount}`,
+        )
+        .catch(() => {});
+    }
+
+    return result;
   }
 
   async deleteSale(tenantId: string, id: string) {
