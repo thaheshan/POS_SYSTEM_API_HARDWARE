@@ -51,7 +51,8 @@ export class SalesController {
   @Put(':id')
   @ApiOperation({ summary: 'Update a specific sales invoice by ID' })
   async updateSale(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: any) {
-    return this.salesService.updateSale(req.user.tenant_id, id, body);
+    const userId = req.user?.user_id || (req.user as any)?.sub;
+    return this.salesService.updateSale(req.user.tenant_id, id, body, userId);
   }
 
   @Delete(':id')
