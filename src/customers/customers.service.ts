@@ -19,12 +19,9 @@ export class CustomersService {
     return {
       status: 'success',
       data: customers.map(c => {
-        // Calculate true values from invoices if the mock data didn't update the cached fields
+        // Calculate exact totals from linked sales invoices for 100% accuracy
         const calculatedTotal = c.salesInvoices.reduce((sum, inv) => sum + Number(inv.totalAmount || 0), 0);
         const calculatedOutstanding = c.salesInvoices.reduce((sum, inv) => sum + Number(inv.balance || 0), 0);
-        
-        const finalTotal = Math.max(Number(c.totalPurchases || 0), calculatedTotal);
-        const finalOutstanding = Math.max(Number(c.outstandingBalance || 0), calculatedOutstanding);
 
         return {
           id: c.id,
@@ -33,13 +30,55 @@ export class CustomersService {
           email: c.email || 'N/A',
           address: c.address || 'N/A',
           customerType: c.customerType || 'Individual',
-          totalPurchases: finalTotal,
-          outstandingBalance: finalOutstanding,
+          totalPurchases: Number(calculatedTotal.toFixed(2)),
+          outstandingBalance: Number(calculatedOutstanding.toFixed(2)),
+          creditBalance: Number(calculatedOutstanding.toFixed(2)),
           transactionsCount: c.salesInvoices.length,
-          isOverdue: finalOutstanding > 0,
+          isOverdue: calculatedOutstanding > 0,
           createdAt: c.createdAt
         };
       })
+    };
+  }
+
+  async getCustomerById(tenantId: string, customerId: string) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, tenantId },
+      include: {
+        salesInvoices: {
+          select: { id: true, totalAmount: true, balance: true, invoiceNumber: true, createdAt: true, paymentStatus: true }
+        }
+      }
+    });
+
+    if (!customer) {
+      return { status: 'error', message: 'Customer not found' };
+    }
+
+    const calculatedTotal = customer.salesInvoices.reduce((sum, inv) => sum + Number(inv.totalAmount || 0), 0);
+    const calculatedOutstanding = customer.salesInvoices.reduce((sum, inv) => sum + Number(inv.balance || 0), 0);
+
+    return {
+      status: 'success',
+      data: {
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone,
+        email: customer.email || 'N/A',
+        address: customer.address || 'N/A',
+        customerType: customer.customerType || 'Individual',
+        totalPurchases: Number(calculatedTotal.toFixed(2)),
+        outstandingBalance: Number(calculatedOutstanding.toFixed(2)),
+        creditBalance: Number(calculatedOutstanding.toFixed(2)),
+        transactionsCount: customer.salesInvoices.length,
+        isOverdue: calculatedOutstanding > 0,
+        createdAt: customer.createdAt,
+        salesInvoices: customer.salesInvoices.map(inv => ({
+          ...inv,
+          totalAmount: Number(inv.totalAmount),
+          balance: Number(inv.balance)
+        }))
+      }
     };
   }
 

@@ -63,8 +63,11 @@ export class SalesService {
     return {
       status: 'success',
       data: {
-        items: invoices.map((inv) => ({
+        items: invoices.map((inv: any) => ({
           ...inv,
+          customerName: inv.customerName || inv.customer?.name || 'Walk-in Customer',
+          customerPhone: inv.customerPhone || inv.customer?.phone || '',
+          customerEmail: inv.customerEmail || inv.customer?.email || '',
           totalAmount: Number(inv.totalAmount),
         })),
         total,
@@ -86,7 +89,7 @@ export class SalesService {
         ...(isUuid ? { id } : { invoiceNumber: id }),
       },
       include: {
-        customer: { select: { name: true, phone: true } },
+        customer: { select: { name: true, phone: true, email: true } },
         items: {
           include: {
             product: { select: { name: true, sku: true, sellingPrice: true } },
@@ -103,6 +106,9 @@ export class SalesService {
       status: 'success',
       data: {
         ...invoice,
+        customerName: (invoice as any).customerName || invoice.customer?.name || 'Walk-in Customer',
+        customerPhone: (invoice as any).customerPhone || invoice.customer?.phone || '',
+        customerEmail: (invoice as any).customerEmail || invoice.customer?.email || '',
         totalAmount: Number(invoice.totalAmount),
         subtotal: Number(invoice.subtotal),
         discountAmount: Number(invoice.discountAmount),
@@ -111,6 +117,7 @@ export class SalesService {
           ...item,
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
+          discountAmount: Number(item.discountAmount ?? 0),
           lineTotal: Number(item.lineTotal),
           taxAmount: Number(item.taxAmount),
         })),
@@ -139,49 +146,57 @@ export class SalesService {
     const oldBalance = Number(invoice.balance);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      // 1. Customer details update or auto-link
-      let targetCustomerId = invoice.customerId;
+      // 1. Customer resolution (Isolate customer details to THIS invoice only)
+      const oldCustomerId = invoice.customerId;
+      let targetCustomerId = oldCustomerId;
 
-      if (targetCustomerId) {
-        if (data.customerName || data.customerPhone || data.customerEmail) {
-          await tx.customer.update({
-            where: { id: targetCustomerId },
-            data: {
-              name:
-                data.customerName !== undefined && data.customerName !== ''
-                  ? data.customerName
-                  : undefined,
-              phone:
-                data.customerPhone !== undefined && data.customerPhone !== ''
-                  ? data.customerPhone
-                  : undefined,
-              email:
-                data.customerEmail !== undefined && data.customerEmail !== ''
-                  ? data.customerEmail
-                  : undefined,
-            },
-          });
-        }
+      // If user selected a specific customerId (from dropdown or newly added customer)
+      if (
+        data.customerId !== undefined &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          String(data.customerId),
+        )
+      ) {
+        targetCustomerId = String(data.customerId);
       } else if (data.customerName || data.customerPhone) {
-        // Try linking an existing customer or creating a new one
-        const cPhone = data.customerPhone?.trim();
-        let foundCustomer = cPhone
-          ? await tx.customer.findFirst({ where: { tenantId, phone: cPhone } })
-          : null;
+        const newName = data.customerName?.trim();
+        const newPhone = data.customerPhone?.trim();
 
-        if (!foundCustomer && data.customerName?.trim()) {
-          foundCustomer = await tx.customer.create({
-            data: {
-              tenantId,
-              name: data.customerName.trim(),
-              phone: cPhone || '—',
-              email: data.customerEmail?.trim() || null,
-            },
-          });
-        }
+        const currentCustName = (invoice as any).customerName || invoice.customer?.name;
+        const currentCustPhone = (invoice as any).customerPhone || invoice.customer?.phone;
 
-        if (foundCustomer) {
-          targetCustomerId = foundCustomer.id;
+        // If the user changed the customer name or phone on THIS invoice:
+        if (
+          (newName && newName !== currentCustName) ||
+          (newPhone && newPhone !== currentCustPhone)
+        ) {
+          // Find or create a separate customer profile so other invoices are not affected!
+          let matchingCust = newPhone
+            ? await tx.customer.findFirst({
+                where: { tenantId, phone: newPhone },
+              })
+            : null;
+
+          if (!matchingCust && newName) {
+            matchingCust = await tx.customer.findFirst({
+              where: { tenantId, name: { equals: newName, mode: 'insensitive' } },
+            });
+          }
+
+          if (!matchingCust && (newName || newPhone)) {
+            matchingCust = await tx.customer.create({
+              data: {
+                tenantId,
+                name: newName || 'Walk-in',
+                phone: newPhone || '—',
+                email: data.customerEmail?.trim() || null,
+              },
+            });
+          }
+
+          if (matchingCust) {
+            targetCustomerId = matchingCust.id;
+          }
         }
       }
 
@@ -400,6 +415,7 @@ export class SalesService {
       const paymentStatus =
         newBalance <= 0 ? 'PAID' : newPaidAmount > 0 ? 'PARTIAL' : 'UNPAID';
 
+      // Update invoice specific fields strictly on this invoice record
       await tx.salesInvoice.update({
         where: { id: invoice.id },
         data: {
@@ -414,15 +430,33 @@ export class SalesService {
         },
       });
 
-      // 4. Update customer aggregate purchases and balance if linked
-      if (targetCustomerId) {
+      // 4. Update customer aggregate purchases and balance if customer ID is linked
+      if (oldCustomerId && targetCustomerId && oldCustomerId !== targetCustomerId) {
+        // Re-linked to a different customer: adjust old & new customer records
+        await tx.customer.update({
+          where: { id: oldCustomerId },
+          data: {
+            totalPurchases: { decrement: oldTotalAmount },
+            outstandingBalance: { decrement: oldBalance },
+          },
+        }).catch(() => {});
+
+        await tx.customer.update({
+          where: { id: targetCustomerId },
+          data: {
+            totalPurchases: { increment: totalAmount },
+            outstandingBalance: { increment: newBalance },
+          },
+        }).catch(() => {});
+      } else if (targetCustomerId) {
+        // Same customer: update total purchase & balance delta
         await tx.customer.update({
           where: { id: targetCustomerId },
           data: {
             totalPurchases: { increment: totalDelta },
             outstandingBalance: { increment: balanceDelta },
           },
-        });
+        }).catch(() => {});
       }
 
       return {
@@ -450,6 +484,83 @@ export class SalesService {
     }
 
     return result;
+  }
+
+  async addCredit(tenantId: string, id: string, creditAmount: number, userId?: string) {
+    if (!creditAmount || creditAmount <= 0) {
+      throw new BadRequestException('Credit amount must be greater than 0');
+    }
+
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    const invoice = await this.prisma.salesInvoice.findFirst({
+      where: {
+        tenantId,
+        ...(isUuid ? { id } : { invoiceNumber: id }),
+      },
+    });
+
+    if (!invoice) {
+      throw new BadRequestException('Invoice not found');
+    }
+
+    const currentPaid = Number(invoice.paidAmount);
+    const totalAmount = Number(invoice.totalAmount);
+    const currentBalance = Number(invoice.balance);
+
+    // Clamp credit so we never overpay
+    const effectiveCredit = Math.min(creditAmount, currentBalance);
+    if (effectiveCredit <= 0) {
+      throw new BadRequestException('Invoice is already fully paid');
+    }
+
+    const newPaid = Number((currentPaid + effectiveCredit).toFixed(2));
+    const newBalance = Math.max(0, Number((totalAmount - newPaid).toFixed(2)));
+    const paymentStatus: any = newBalance <= 0 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'UNPAID';
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.salesInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          paidAmount: newPaid,
+          balance: newBalance,
+          paymentStatus,
+        },
+      });
+
+      // Update customer outstanding balance
+      if (invoice.customerId) {
+        await tx.customer.update({
+          where: { id: invoice.customerId },
+          data: {
+            outstandingBalance: { decrement: effectiveCredit },
+          },
+        }).catch(() => {});
+      }
+    });
+
+    if (userId) {
+      await this.activityLogsService
+        .log(
+          tenantId,
+          userId,
+          'ADD_CREDIT',
+          `Credit of Rs. ${effectiveCredit} applied to Invoice ${invoice.invoiceNumber}. Balance: Rs. ${newBalance}`,
+        )
+        .catch(() => {});
+    }
+
+    return {
+      success: true,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      creditApplied: effectiveCredit,
+      newPaidAmount: newPaid,
+      newBalance,
+      paymentStatus,
+      message: `Credit of Rs. ${effectiveCredit} applied successfully`,
+    };
   }
 
   async deleteSale(tenantId: string, id: string) {

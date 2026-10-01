@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put, Delete, Req, UseGuards, Query, Param } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, Patch, Delete, Req, UseGuards, Query, Param } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { AdvancedSalesService } from './advanced-sales.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -53,6 +53,13 @@ export class SalesController {
   async updateSale(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: any) {
     const userId = req.user?.user_id || (req.user as any)?.sub;
     return this.salesService.updateSale(req.user.tenant_id, id, body, userId);
+  }
+
+  @Patch(':id/add-credit')
+  @ApiOperation({ summary: 'Record a payment credit against an unpaid/partial invoice' })
+  async addCredit(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: { amount: number }) {
+    const userId = req.user?.user_id || (req.user as any)?.sub;
+    return this.salesService.addCredit(req.user.tenant_id, id, Number(body.amount), userId);
   }
 
   @Delete(':id')
