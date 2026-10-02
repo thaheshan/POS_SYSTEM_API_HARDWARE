@@ -107,8 +107,8 @@ export class DashboardService {
         },
         _sum: { amount: true },
       }),
-      // Monthly COGS aggregate (Sales Items) - include product.purchasePrice as fallback
-      this.prisma.salesInvoiceItem.findMany({
+      // Monthly COGS aggregate (Sales Items)
+      this.prisma.salesInvoiceItem.aggregate({
         where: {
           invoice: {
             tenantId,
@@ -117,11 +117,9 @@ export class DashboardService {
             invoiceNumber: { not: { startsWith: 'RET-' } },
           }
         },
-        select: {
-          quantity: true,
-          costPrice: true,
+        _sum: {
+          profit: true,
           lineTotal: true,
-          product: { select: { purchasePrice: true } },
         },
       }),
       // Total customers
@@ -132,17 +130,11 @@ export class DashboardService {
     const purchasesTotal = Number(monthPurchases._sum.totalCost ?? 0);
     const expensesTotal = Number(monthExpenses._sum.amount ?? 0);
     
-    let cogsTotal = 0;
-    for (const item of monthSalesItems as any[]) {
-      const qty = Number(item.quantity ?? 0);
-      // Use saved costPrice first, fall back to product's purchasePrice
-      const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
-      const itemCogs = qty * unitCost;
-      cogsTotal += itemCogs;
-    }
+    // Total profit aggregate from invoice items
+    const cogsTotal = Number(monthSalesItems._sum?.lineTotal ?? 0) - Number(monthSalesItems._sum?.profit ?? 0);
     
     // Gross Profit is actual Revenue minus actual COGS
-    const grossProfit = salesTotal - cogsTotal;
+    const grossProfit = Number(monthSalesItems._sum?.profit ?? (salesTotal - cogsTotal));
     
     // Net Profit = Gross Product Margin - Category C Expenses
     const netRevenue = grossProfit - expensesTotal;
@@ -412,7 +404,7 @@ export class DashboardService {
         },
         _sum: { amount: true },
       }),
-      this.prisma.salesInvoiceItem.findMany({
+      this.prisma.salesInvoiceItem.aggregate({
         where: {
           invoice: {
             tenantId,
@@ -421,11 +413,9 @@ export class DashboardService {
             ...(Object.keys(whereDateSales).length > 0 && { createdAt: whereDateSales }),
           }
         },
-        select: {
-          quantity: true,
-          costPrice: true,
+        _sum: {
+          profit: true,
           lineTotal: true,
-          product: { select: { purchasePrice: true } },
         },
       }),
     ]);
@@ -434,16 +424,8 @@ export class DashboardService {
     const totalPurchases = Number(purchasesAgg._sum.totalCost ?? 0);
     const totalExpenses = Number(expensesAgg._sum.amount ?? 0);
     
-    let cogsTotal = 0;
-    for (const item of salesItemsAgg as any[]) {
-      const qty = Number(item.quantity ?? 0);
-      const unitCost = Number(item.costPrice ?? item.product?.purchasePrice ?? 0);
-      const itemCogs = qty * unitCost;
-      cogsTotal += itemCogs;
-    }
-    
-    // Gross Profit is actual Revenue minus actual COGS
-    const grossProfit = totalSales - cogsTotal;
+    const cogsTotal = Number(salesItemsAgg._sum?.lineTotal ?? 0) - Number(salesItemsAgg._sum?.profit ?? 0);
+    const grossProfit = Number(salesItemsAgg._sum?.profit ?? (totalSales - cogsTotal));
     
     // Net Profit = Gross Product Margin - Category C Expenses
     const netProfit = grossProfit - totalExpenses;

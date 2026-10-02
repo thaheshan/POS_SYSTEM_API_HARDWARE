@@ -16,7 +16,7 @@ export class SalesService {
   ) {}
 
   async getSales(tenantId: string, query: any) {
-    const limit = Number(query.limit) || 1000;
+    const limit = Number(query.limit) || 20;
     const page = Number(query.page) || 1;
     const skip = (page - 1) * limit;
 
