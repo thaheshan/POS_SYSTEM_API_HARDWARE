@@ -8,9 +8,18 @@ export class CustomersService {
   async getCustomers(tenantId: string, query: any) {
     const customers = await this.prisma.customer.findMany({
       where: { tenantId },
-      include: {
-        salesInvoices: {
-          select: { id: true, totalAmount: true, balance: true }
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        address: true,
+        customerType: true,
+        outstandingBalance: true,
+        totalPurchases: true,
+        createdAt: true,
+        _count: {
+          select: { salesInvoices: true }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -19,9 +28,8 @@ export class CustomersService {
     return {
       status: 'success',
       data: customers.map(c => {
-        // Calculate exact totals from linked sales invoices for 100% accuracy
-        const calculatedTotal = c.salesInvoices.reduce((sum, inv) => sum + Number(inv.totalAmount || 0), 0);
-        const calculatedOutstanding = c.salesInvoices.reduce((sum, inv) => sum + Number(inv.balance || 0), 0);
+        const calculatedOutstanding = Number(c.outstandingBalance || 0);
+        const calculatedTotal = Number(c.totalPurchases || 0);
 
         return {
           id: c.id,
@@ -33,7 +41,7 @@ export class CustomersService {
           totalPurchases: Number(calculatedTotal.toFixed(2)),
           outstandingBalance: Number(calculatedOutstanding.toFixed(2)),
           creditBalance: Number(calculatedOutstanding.toFixed(2)),
-          transactionsCount: c.salesInvoices.length,
+          transactionsCount: c._count.salesInvoices,
           isOverdue: calculatedOutstanding > 0,
           createdAt: c.createdAt
         };
@@ -101,15 +109,23 @@ export class CustomersService {
   }
 
   async updateCustomer(tenantId: string, customerId: string, data: any) {
+    const newCredit = data.outstandingBalance ?? data.creditBalance ?? data.outstanding ?? data.outstanding_balance;
+    
+    const updateData: any = {
+      name: data.name,
+      phone: data.phone,
+      email: data.email || null,
+      address: data.address || null,
+      customerType: data.customerType || 'Individual',
+    };
+
+    if (newCredit !== undefined && newCredit !== null) {
+      updateData.outstandingBalance = Number(newCredit);
+    }
+
     const customer = await this.prisma.customer.update({
       where: { id: customerId, tenantId },
-      data: {
-        name: data.name,
-        phone: data.phone,
-        email: data.email || null,
-        address: data.address || null,
-        customerType: data.customerType || 'Individual',
-      }
+      data: updateData,
     });
 
     return {

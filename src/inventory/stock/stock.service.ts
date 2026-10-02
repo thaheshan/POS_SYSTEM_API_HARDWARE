@@ -558,7 +558,7 @@ export class StockService {
       out_of_stock: stockStatus.out_of_stock,
       sellType: stock.product.sellType,
       measurementUnit: stock.product.measurementUnit,
-      product: stock.product,
+      // product nested object removed to eliminate 80% redundant payload duplicate data
     };
   }
   private applyDynamicFilters(

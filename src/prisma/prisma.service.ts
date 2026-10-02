@@ -24,8 +24,9 @@ export class PrismaService
       ssl: { rejectUnauthorized: false },
       max: 10, // Keep connection count under Supabase Session Mode pool_size limit (15)
       keepAlive: true,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 15000,
+      keepAliveInitialDelayMillis: 10000,
+      idleTimeoutMillis: 10000, // Close idle connections faster to avoid stale sockets
+      connectionTimeoutMillis: 30000, // Allow up to 30s during cold starts / network spikes
     });
 
     pool.on('error', (err) => {

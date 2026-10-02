@@ -12,7 +12,29 @@ export class SuppliersService {
     });
   }
 
+  async getSupplierStats(tenantId: string) {
+    const totalSuppliers = await this.prisma.supplier.count({
+      where: { tenantId },
+    });
+    const activeSuppliers = await this.prisma.supplier.count({
+      where: { tenantId, isActive: true },
+    });
+    return {
+      success: true,
+      data: {
+        totalSuppliers,
+        activeSuppliers,
+      },
+    };
+  }
+
   async getSupplierById(id: string, tenantId: string) {
+    // Validate UUID format to prevent 500 error when non-UUID paths are routed here
+    const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id);
+    if (!isUuid) {
+      throw new NotFoundException('Supplier not found');
+    }
+
     const supplier = await this.prisma.supplier.findFirst({
       where: { id, tenantId },
     });

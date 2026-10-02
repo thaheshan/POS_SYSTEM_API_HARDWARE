@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { SuppliersService } from './suppliers.service';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
@@ -23,10 +23,20 @@ export class SuppliersController {
     return this.suppliersService.getSuppliers(req.user.tenant_id);
   }
 
+  @Get('stats')
+  @ApiOperation({ summary: 'Get supplier statistics' })
+  @ApiResponse({ status: 200, description: 'Supplier statistics overview' })
+  async getSupplierStats(@Req() req: AuthenticatedRequest) {
+    return this.suppliersService.getSupplierStats(req.user.tenant_id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single supplier' })
   @ApiResponse({ status: 200, description: 'Supplier details' })
-  async getSupplierById(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  async getSupplierById(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.suppliersService.getSupplierById(id, req.user.tenant_id);
   }
 }
