@@ -52,6 +52,10 @@ export class SubscriptionCronService {
       
       // Auto-suspend if overdue by 7 days
       if (diffDays <= -7) {
+        if (process.env.NODE_ENV !== 'production') {
+          this.logger.warn(`[DEV] Shop ${shop.id} is overdue by ${Math.abs(diffDays)} days. Skipping auto-suspension in development.`);
+          continue;
+        }
         this.logger.log(`Auto-suspending shop ${shop.id} due to overdue payment.`);
         await this.prisma.shop.update({
           where: { id: shop.id },
