@@ -416,14 +416,30 @@ export class AuthService {
       }
 
       if (shopInfo.subscriptionStatus === 'SUSPENDED') {
-        throw new HttpException(
-          {
-            statusCode: 403,
-            message: 'ACCOUNT_SUSPENDED',
-            data: { status: 'SUSPENDED' },
-          },
-          HttpStatus.FORBIDDEN,
-        );
+        if (process.env.NODE_ENV !== 'production' && user.tenant_id) {
+          this.logger.warn(`[DEV] Shop ${user.tenant_id} is marked SUSPENDED. Auto-reactivating for local development.`);
+          const nextDue = new Date();
+          nextDue.setMonth(nextDue.getMonth() + 1);
+          await this.prisma.shop.update({
+            where: { id: user.tenant_id },
+            data: {
+              subscriptionStatus: 'ACTIVE',
+              paymentStatus: 'PAID',
+              nextPaymentDue: nextDue,
+            },
+          });
+          shopInfo.subscriptionStatus = 'ACTIVE';
+          shopInfo.paymentStatus = 'PAID';
+        } else {
+          throw new HttpException(
+            {
+              statusCode: 403,
+              message: 'ACCOUNT_SUSPENDED',
+              data: { status: 'SUSPENDED' },
+            },
+            HttpStatus.FORBIDDEN,
+          );
+        }
       }
 
       if (!user.is_active) {
@@ -558,11 +574,18 @@ export class AuthService {
     }
 
     const tenantId = user.tenant_id;
+    const nextDue = new Date();
+    nextDue.setMonth(nextDue.getMonth() + 1);
 
     await this.prisma.$transaction(async (prisma) => {
       await prisma.shop.update({
         where: { id: tenantId },
-        data: { paymentStatus: 'PAID' },
+        data: {
+          paymentStatus: 'PAID',
+          subscriptionStatus: 'ACTIVE',
+          nextPaymentDue: nextDue,
+          selfReportedPaid: false,
+        },
       });
       await prisma.user.update({
         where: { user_id: userId },
@@ -588,11 +611,18 @@ export class AuthService {
     }
 
     const tenantId = user.tenant_id;
+    const nextDue = new Date();
+    nextDue.setMonth(nextDue.getMonth() + 1);
 
     await this.prisma.$transaction(async (prisma) => {
       await prisma.shop.update({
         where: { id: tenantId },
-        data: { paymentStatus: 'PAID' },
+        data: {
+          paymentStatus: 'PAID',
+          subscriptionStatus: 'ACTIVE',
+          nextPaymentDue: nextDue,
+          selfReportedPaid: false,
+        },
       });
       await prisma.user.update({
         where: { user_id: user.user_id },
