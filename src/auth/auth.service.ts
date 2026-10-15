@@ -402,15 +402,26 @@ export class AuthService {
         throw new UnauthorizedException('Account has been rejected by administration');
       }
 
-      let shopInfo: { subscriptionPlan?: string | null; paymentStatus?: string | null; subscriptionStatus?: string | null; logoUrl?: string | null } = {};
-      if (user.role === 'OWNER' && user.tenant_id) {
+      let shopInfo: {
+        subscriptionPlan?: string | null;
+        paymentStatus?: string | null;
+        subscriptionStatus?: string | null;
+        logoUrl?: string | null;
+        shopName?: string | null;
+        shopAddress?: string | null;
+        shopPhone?: string | null;
+      } = {};
+      if (user.tenant_id) {
         const shop = await this.prisma.shop.findUnique({ where: { id: user.tenant_id } });
         if (shop) {
           shopInfo = { 
             subscriptionPlan: shop.subscriptionPlan, 
             paymentStatus: shop.paymentStatus,
             subscriptionStatus: shop.subscriptionStatus,
-            logoUrl: shop.logo_url
+            logoUrl: shop.logo_url,
+            shopName: shop.name,
+            shopAddress: shop.address,
+            shopPhone: shop.phone,
           };
         }
       }
