@@ -15,6 +15,11 @@ export class CustomersController {
     return this.customersService.getCustomers(req.user.tenant_id, query);
   }
 
+  @Post('reconcile')
+  async reconcileCustomers(@Req() req: any, @Query('customerId') customerId?: string) {
+    return this.customersService.reconcileCustomers(req.user.tenant_id, customerId);
+  }
+
   @Post()
   async createCustomer(@Req() req: any, @Body() body: any) {
     return this.customersService.createCustomer(req.user.tenant_id, body);

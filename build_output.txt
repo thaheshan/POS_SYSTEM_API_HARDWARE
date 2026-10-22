@@ -1,0 +1,20 @@
+﻿
+> hardware_pos_api@0.0.1 build
+> npx prisma generate && nest build
+
+Γùç injected env (12) from .env // tip: Γùê encrypted .env [www.dotenvx.com]
+npm : Loaded Prisma config from prisma.config.ts.
+At line:1 char:83
++ ... GitHub\POS_SYSTEM_API_HARDWARE"; $result = npm run build 2>&1; $exitC ...
++                                                ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Loaded Prisma c...isma.config.ts.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+Prisma schema loaded from prisma\schema.prisma.
+
+Γ£ö Generated Prisma Client (v7.8.0) to .\node_modules\@prisma\client in 434ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+
