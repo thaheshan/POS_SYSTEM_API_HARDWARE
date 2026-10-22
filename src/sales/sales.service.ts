@@ -529,14 +529,18 @@ export class SalesService {
         },
       });
 
-      // Update customer outstanding balance
-      if (invoice.customerId) {
-        await tx.customer.update({
-          where: { id: invoice.customerId },
-          data: {
-            outstandingBalance: { decrement: effectiveCredit },
-          },
-        }).catch(() => {});
+            // Update customer outstanding balance safely
+      const targetCustId = invoice.customerId;
+      if (targetCustId) {
+        const cust = await tx.customer.findUnique({ where: { id: targetCustId } });
+        if (cust) {
+          const currentCustBal = Number(cust.outstandingBalance || 0);
+          const nextCustBal = Math.max(0, Number((currentCustBal - effectiveCredit).toFixed(2)));
+          await tx.customer.update({
+            where: { id: targetCustId },
+            data: { outstandingBalance: nextCustBal },
+          }).catch(() => {});
+        }
       }
     });
 

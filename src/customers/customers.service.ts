@@ -18,6 +18,9 @@ export class CustomersService {
         outstandingBalance: true,
         totalPurchases: true,
         createdAt: true,
+        salesInvoices: {
+          select: { totalAmount: true, balance: true }
+        },
         _count: {
           select: { salesInvoices: true }
         }
@@ -28,8 +31,13 @@ export class CustomersService {
     return {
       status: 'success',
       data: customers.map(c => {
-        const calculatedOutstanding = Number(c.outstandingBalance || 0);
-        const calculatedTotal = Number(c.totalPurchases || 0);
+        const invTotal = c.salesInvoices && c.salesInvoices.length > 0
+          ? c.salesInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.totalAmount || 0)), 0)
+          : Number(c.totalPurchases || 0);
+
+        const invOutstanding = c.salesInvoices && c.salesInvoices.length > 0
+          ? c.salesInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.balance || 0)), 0)
+          : Number(c.outstandingBalance || 0);
 
         return {
           id: c.id,
@@ -38,11 +46,11 @@ export class CustomersService {
           email: c.email || 'N/A',
           address: c.address || 'N/A',
           customerType: c.customerType || 'Individual',
-          totalPurchases: Number(calculatedTotal.toFixed(2)),
-          outstandingBalance: Number(calculatedOutstanding.toFixed(2)),
-          creditBalance: Number(calculatedOutstanding.toFixed(2)),
+          totalPurchases: Number(invTotal.toFixed(2)),
+          outstandingBalance: Number(invOutstanding.toFixed(2)),
+          creditBalance: Number(invOutstanding.toFixed(2)),
           transactionsCount: c._count.salesInvoices,
-          isOverdue: calculatedOutstanding > 0,
+          isOverdue: invOutstanding > 0,
           createdAt: c.createdAt
         };
       })
@@ -63,8 +71,8 @@ export class CustomersService {
       return { status: 'error', message: 'Customer not found' };
     }
 
-    const calculatedTotal = customer.salesInvoices.reduce((sum, inv) => sum + Number(inv.totalAmount || 0), 0);
-    const calculatedOutstanding = customer.salesInvoices.reduce((sum, inv) => sum + Number(inv.balance || 0), 0);
+    const calculatedTotal = customer.salesInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.totalAmount || 0)), 0);
+    const calculatedOutstanding = customer.salesInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.balance || 0)), 0);
 
     return {
       status: 'success',
@@ -87,6 +95,49 @@ export class CustomersService {
           balance: Number(inv.balance)
         }))
       }
+    };
+  }
+
+  async reconcileCustomers(tenantId: string, customerId?: string) {
+    const where: any = { tenantId };
+    if (customerId) where.id = customerId;
+
+    const customers = await this.prisma.customer.findMany({
+      where,
+      include: {
+        salesInvoices: {
+          select: { id: true, totalAmount: true, balance: true, invoiceNumber: true }
+        }
+      }
+    });
+
+    const results: any[] = [];
+    for (const c of customers) {
+      const totalPurchases = c.salesInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.totalAmount || 0)), 0);
+      const outstandingBalance = c.salesInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.balance || 0)), 0);
+
+      await this.prisma.customer.update({
+        where: { id: c.id },
+        data: {
+          totalPurchases,
+          outstandingBalance,
+        }
+      });
+
+      results.push({
+        id: c.id,
+        name: c.name,
+        totalPurchases,
+        outstandingBalance,
+        transactionsCount: c.salesInvoices.length,
+      });
+    }
+
+    return {
+      status: 'success',
+      message: `Reconciled ${results.length} customer(s)`,
+      count: results.length,
+      data: results
     };
   }
 
@@ -145,4 +196,3 @@ export class CustomersService {
     };
   }
 }
-
