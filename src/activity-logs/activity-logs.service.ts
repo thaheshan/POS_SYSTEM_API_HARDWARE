@@ -51,10 +51,13 @@ export class ActivityLogsService {
       }
     }
 
-    if (searchUser) {
+    if (searchUser && searchUser.trim()) {
+      const term = searchUser.trim();
       where.OR = [
-        { userName: { contains: searchUser, mode: 'insensitive' } },
-        { user: { email: { contains: searchUser, mode: 'insensitive' } } }
+        { userName: { contains: term, mode: 'insensitive' } },
+        { user: { email: { contains: term, mode: 'insensitive' } } },
+        { details: { contains: term, mode: 'insensitive' } },
+        { action: { contains: term, mode: 'insensitive' } },
       ];
     }
 
