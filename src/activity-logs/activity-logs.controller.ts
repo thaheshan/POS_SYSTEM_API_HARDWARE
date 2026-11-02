@@ -16,12 +16,14 @@ export class ActivityLogsController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('searchUser') searchUser?: string,
+    @Query('search') search?: string,
   ) {
     const role = req.user.role?.toLowerCase();
     if (role !== 'admin' && role !== 'owner') {
       throw new ForbiddenException('Only shop owners and admins can access activity logs.');
     }
-    return this.activityLogsService.findAll(req.user.tenant_id, startDate, endDate, searchUser);
+    const queryTerm = search || searchUser;
+    return this.activityLogsService.findAll(req.user.tenant_id, startDate, endDate, queryTerm);
   }
 
   @Post()
