@@ -27,6 +27,7 @@ import { SmsModule } from './sms/sms.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 
 import { CatalogModule } from './catalog/catalog.module';
+import { HardwareModule } from './hardware/hardware.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { CatalogModule } from './catalog/catalog.module';
     SmsModule,
     WarehousesModule,
     CatalogModule,
+    HardwareModule,
   ],
   controllers: [AppController],
   providers: [AppService],
